@@ -242,6 +242,43 @@ def main() -> None:
     extracted_result = ZeroShotClassifier().evaluate(extracted_cache)
     if extracted_result.metrics["num_samples"] != 12:
         raise RuntimeError("Zero-shot failed to consume extracted fake feature cache")
+    method_run_paths = {}
+    for script_name, method_name, extra_args in [
+        ("scripts/run_linear_probe.py", "linear_probe", []),
+        ("scripts/run_tip_adapter.py", "tip_adapter", []),
+        ("scripts/run_proto_adapter.py", "proto_adapter", []),
+        ("scripts/run_rs_cpc.py", "rs_cpc", ["--num-prototypes-per-class", "2", "--prototype-init", "random_group_mean"]),
+    ]:
+        completed_method = subprocess.run(
+            [
+                sys.executable,
+                script_name,
+                "--dataset",
+                "eurosat",
+                "--backbone",
+                "fake_backbone",
+                "--dry-run",
+                "--max-samples",
+                "12",
+                "--execution-env",
+                args.execution_env,
+                "--run-mode",
+                args.run_mode,
+                "--device",
+                args.device,
+                "--output-dir",
+                str(output_dir / "method_runs"),
+                *extra_args,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        method_metrics_path = parse_output_path(completed_method.stdout, "metrics_path")
+        method_metrics = read_json(method_metrics_path)
+        if method_metrics["is_paper_result"] or not method_metrics["fake_or_dry_run"]:
+            raise RuntimeError(f"{method_name} smoke run guardrails failed")
+        method_run_paths[method_name] = str(method_metrics_path)
 
     run, metadata = start_experiment_run(
         output_dir=output_dir,
@@ -294,6 +331,7 @@ def main() -> None:
         "extracted_feature_cache_path": str(extracted_feature_cache_path),
         "extracted_feature_summary_path": str(extracted_feature_summary_path),
         "feature_cache_validation_report_path": str(feature_validation_report_path),
+        "method_run_metrics_paths": method_run_paths,
         "dataset_inspection_report_path": str(inspection_report_path),
         "dataset_inspection_summary_path": str(inspection_summary_path),
     }
@@ -342,6 +380,8 @@ def main() -> None:
     print(f"extracted_feature_cache_path={extracted_feature_cache_path}")
     print(f"extracted_feature_summary_path={extracted_feature_summary_path}")
     print(f"feature_cache_validation_report_path={feature_validation_report_path}")
+    for method_name, method_metrics_path in method_run_paths.items():
+        print(f"{method_name}_metrics_path={method_metrics_path}")
     print(f"dataset_inspection_report_path={inspection_report_path}")
     print(f"dataset_inspection_summary_path={inspection_summary_path}")
     print(f"split_dir={split_dir}")

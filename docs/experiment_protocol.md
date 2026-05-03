@@ -18,6 +18,12 @@ Feature extraction dry-runs write a feature cache and `feature_extraction_summar
 
 Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
 
+## Training-Free Method Validation
+
+Phase 1E method runners consume feature caches and can run on fake dry-run caches locally. Local runs must remain `execution_env: local_wsl`, `run_mode: smoke_test`, `device: cpu`, and `is_paper_result: false`.
+
+Implemented local-validation methods are zero-shot, linear probe skeleton, training-free Tip-Adapter, training-free Proto-Adapter, and training-free RS-CPC skeleton. Fine-tuned variants are disabled until later phases.
+
 ## Local Smoke Outputs
 
 Smoke outputs may use fake datasets and fake features. They must include:

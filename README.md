@@ -16,6 +16,7 @@ Implemented in this scaffold:
 - Zero-shot evaluation over cached features.
 - Backbone wrapper interfaces with dry-run fake feature support.
 - Local dry-run feature extraction and feature-cache validation.
+- Feature-cache-based training-free baseline skeletons.
 - Prediction, per-class accuracy, and confusion-matrix CSV exports.
 - Guarded table export from raw metrics JSON.
 - CPU-only local smoke test.
@@ -25,6 +26,7 @@ Not implemented yet:
 
 - Full CLIP, RemoteCLIP, or GeoRSCLIP feature extraction.
 - Full linear probe, Tip-Adapter, Proto-Adapter, or RS-CPC experiments.
+- Fine-tuned variants such as Tip-Adapter-F, Proto-Adapter-F, and fine-tuned RS-CPC.
 - Heavy dataset sweeps or paper-facing result generation.
 
 ## Local Smoke Test
@@ -133,6 +135,18 @@ Generated local smoke outputs must include:
 Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`, or `local_validation` cannot enter paper-facing tables. Fake-feature smoke metrics include explicit fake-data flags and must not be interpreted as real zero-shot accuracy.
 
 `scripts/export_tables.py` excludes local/debug/smoke/tiny/local-validation runs by default and includes only `server_full`, `server_ablation`, and `server_benchmark`. If no eligible results exist, it writes empty CSV files with headers plus a summary JSON; it never fabricates rows.
+
+## Training-Free Cached-Feature Methods
+
+Phase 1E provides CPU-safe method interfaces and fake-cache validation for:
+
+- zero-shot cached evaluation
+- linear probe skeleton using a nearest-centroid fallback
+- training-free Tip-Adapter
+- training-free Proto-Adapter
+- training-free RS-CPC compact prototype-cache skeleton
+
+These implementations operate on feature caches. Local runs should use `--dry-run` or explicitly provided fake/tiny caches only. Fine-tuned variants are intentionally disabled and raise clear errors. RS-CPC remains compact prototype-cache adaptation; it is not prompt learning and does not use optimal transport alignment.
 
 ## Dataset Inspection
 
