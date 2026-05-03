@@ -8,6 +8,33 @@ Supported dataset descriptors:
 
 Dataset roots must come from config files or command-line arguments.
 
+## Real Dataset Onboarding Status
+
+This is pre-experiment onboarding. It prepares dataset directories for later checks; it is not feature extraction, training, evaluation, or a paper-result step.
+
+Do not download datasets from inside this repository workflow. The user should manually obtain the datasets from their official or institution-approved sources, then place and unzip them under a local or server path chosen by the user. Use placeholder paths in docs and scripts until real paths are known.
+
+Example placeholder root variables:
+
+```bash
+export RS_DATA_ROOT="<DATA_ROOT>"
+export EUROSAT_ROOT="${RS_DATA_ROOT}/EuroSAT"
+export AID_ROOT="${RS_DATA_ROOT}/AID"
+export NWPU_RESISC45_ROOT="${RS_DATA_ROOT}/NWPU-RESISC45"
+```
+
+Manual placement outline:
+
+```text
+1. Manually download EuroSAT, AID, and NWPU-RESISC45 outside Codex.
+2. Place the archives under <DATA_ARCHIVE_ROOT>/.
+3. Unzip each archive under <DATA_ROOT>/.
+4. Confirm class folders are visible before running any split generation.
+5. Run read-only layout preflight and review the JSON report.
+```
+
+No split generation should be run until the layout preflight passes and the report has been reviewed.
+
 ## Folder Layouts
 
 The Phase 1C loaders support class-folder datasets. The configured candidates are:
@@ -29,6 +56,13 @@ EuroSAT root/
     ...
 ```
 
+Alternative accepted EuroSAT layouts:
+
+```text
+<EUROSAT_ROOT>/images/<class_name>/*
+<EUROSAT_ROOT>/<class_name>/*
+```
+
 ```text
 AID root/
   AID/                  # common layout, or images/, or class folders directly
@@ -38,6 +72,13 @@ AID root/
     ...
 ```
 
+Alternative accepted AID layouts:
+
+```text
+<AID_ROOT>/images/<class_name>/*
+<AID_ROOT>/<class_name>/*
+```
+
 ```text
 NWPU-RESISC45 root/
   NWPU-RESISC45/        # common layout, or images/, or class folders directly
@@ -45,6 +86,13 @@ NWPU-RESISC45 root/
       *.jpg|*.jpeg|*.png|*.tif|*.tiff
     airport/
     ...
+```
+
+Alternative accepted NWPU-RESISC45 layouts:
+
+```text
+<NWPU_RESISC45_ROOT>/images/<class_name>/*
+<NWPU_RESISC45_ROOT>/<class_name>/*
 ```
 
 Configured expected class counts:
@@ -78,6 +126,76 @@ Before generating real splits, run the read-only layout preflight:
 The preflight checks root existence, candidate class roots, class folders, expected class count, image counts per class, empty classes, unsupported/non-image files, duplicate or invalid class names, and support for 1/2/4/8/16-shot split generation from the configured train ratio. It writes a timestamped JSON report under `outputs/preflight/{dataset}/`.
 
 The preflight does not modify the dataset, extract features, train, evaluate, download data, or download weights.
+
+Run one command per dataset after manual placement:
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root "<EUROSAT_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/aid.yaml \
+  --dataset aid \
+  --dataset-root "<AID_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/nwpu_resisc45.yaml \
+  --dataset nwpu_resisc45 \
+  --dataset-root "<NWPU_RESISC45_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+Review each JSON report before continuing. Required review points:
+
+- `root_exists: true`
+- `root_is_dir: true`
+- `num_classes` matches the configured expected class count.
+- `empty_classes` is empty.
+- `invalid_class_names` is empty.
+- `duplicate_class_names` is empty.
+- `supports_shots` is true for `1`, `2`, `4`, `8`, and `16`.
+- `is_ready_for_split_generation: true`
+
+## First-Experiment Preflight Checklist
+
+Complete this checklist before requesting split generation or first real run command preparation:
+
+- Dataset manually downloaded by the user.
+- Dataset archive manually unzipped under a placeholder-resolved data root.
+- Class folders are visible for EuroSAT, AID, and NWPU-RESISC45.
+- `scripts/check_dataset_layout.py` passed for the target dataset.
+- The generated preflight JSON has been reviewed.
+- Split generation has not been run unless explicitly requested.
+- No feature extraction has been run.
+- No training has been run.
+- No evaluation has been run.
+- No paper result has been produced.
+
+Safe order:
+
+```text
+manual dataset placement
+-> layout check
+-> review preflight report
+-> split generation preflight
+-> server preflight
+-> prepare first real run commands
+-> user manually executes server jobs
+```
 
 ## Splits
 

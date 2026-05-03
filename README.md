@@ -202,6 +202,71 @@ Inspect a dataset root before generating official splits:
 
 Dataset roots must come from config or CLI. Do not hard-code private paths.
 
+## Real Dataset Onboarding
+
+This is a pre-experiment onboarding workflow. It does not download data, extract features, train, evaluate, or produce paper results.
+
+The user should manually download and unzip datasets outside Codex, then provide placeholder-resolved roots:
+
+```bash
+export RS_DATA_ROOT="<DATA_ROOT>"
+export EUROSAT_ROOT="${RS_DATA_ROOT}/EuroSAT"
+export AID_ROOT="${RS_DATA_ROOT}/AID"
+export NWPU_RESISC45_ROOT="${RS_DATA_ROOT}/NWPU-RESISC45"
+```
+
+Expected roots after manual placement:
+
+```text
+<EUROSAT_ROOT>/RGB/<class_name>/*          # or images/<class_name>/, or class folders directly
+<AID_ROOT>/AID/<class_name>/*              # or images/<class_name>/, or class folders directly
+<NWPU_RESISC45_ROOT>/NWPU-RESISC45/<class_name>/*
+                                           # or images/<class_name>/, or class folders directly
+```
+
+Run read-only layout checks before any split generation:
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root "<EUROSAT_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/aid.yaml \
+  --dataset aid \
+  --dataset-root "<AID_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/nwpu_resisc45.yaml \
+  --dataset nwpu_resisc45 \
+  --dataset-root "<NWPU_RESISC45_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+First-experiment preflight checklist:
+
+- Dataset was manually downloaded and unzipped by the user.
+- Class folders are visible.
+- Layout preflight passed.
+- Preflight JSON was reviewed.
+- Split generation has not been run unless explicitly requested.
+- No feature extraction, training, or evaluation has been run.
+
+Safe order: manual dataset placement -> layout check -> review report -> split generation preflight -> server preflight -> prepare first real run commands -> user manually executes server jobs.
+
 Before generating real split files, run the read-only layout preflight:
 
 ```bash

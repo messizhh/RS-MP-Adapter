@@ -66,6 +66,25 @@ Server script templates under `scripts/server/` are for future manual remote exe
 
 Before any real feature extraction or baseline evaluation, inspect the dataset root with `scripts/inspect_dataset.py`. Critical failures include a missing root, no class-folder layout, empty classes, too few samples per class, or a known expected class count mismatch.
 
+Real dataset onboarding is pre-experiment work. The user manually downloads and unzips datasets outside Codex, then provides placeholder-resolved dataset roots. Codex must not download datasets or weights.
+
+Use placeholder variables until real paths are known:
+
+```bash
+export RS_DATA_ROOT="<DATA_ROOT>"
+export EUROSAT_ROOT="${RS_DATA_ROOT}/EuroSAT"
+export AID_ROOT="${RS_DATA_ROOT}/AID"
+export NWPU_RESISC45_ROOT="${RS_DATA_ROOT}/NWPU-RESISC45"
+```
+
+Expected directory roots:
+
+```text
+<EUROSAT_ROOT>/RGB/<class_name>/*                  # or images/<class_name>/, or class folders directly
+<AID_ROOT>/AID/<class_name>/*                      # or images/<class_name>/, or class folders directly
+<NWPU_RESISC45_ROOT>/NWPU-RESISC45/<class_name>/*  # or images/<class_name>/, or class folders directly
+```
+
 Phase 1G adds a read-only dataset layout preflight:
 
 ```bash
@@ -79,6 +98,63 @@ Phase 1G adds a read-only dataset layout preflight:
 ```
 
 The preflight writes a timestamped JSON report under `outputs/preflight/{dataset}/` with dataset name, root, class counts, total image count, warnings, per-shot support for 1/2/4/8/16, and `is_ready_for_split_generation`. It is a directory check only; it must not modify datasets, extract features, train, evaluate, download data, or download weights.
+
+Layout preflight commands for all target datasets:
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root "<EUROSAT_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/aid.yaml \
+  --dataset aid \
+  --dataset-root "<AID_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/nwpu_resisc45.yaml \
+  --dataset nwpu_resisc45 \
+  --dataset-root "<NWPU_RESISC45_ROOT>" \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+First-experiment preflight checklist:
+
+- Dataset manually downloaded.
+- Dataset manually unzipped.
+- Class folders visible.
+- Layout preflight passed.
+- Preflight JSON reviewed.
+- Split generation not yet run unless explicitly requested.
+- No feature extraction has been run.
+- No training has been run.
+- No evaluation has been run.
+- No paper result has been produced.
+
+Safe order:
+
+```text
+manual dataset placement
+-> layout check
+-> review report
+-> split generation preflight
+-> server preflight
+-> prepare first real run commands
+-> user manually executes server jobs
+```
 
 Splits are generated with `scripts/generate_splits.py`. Generation is deterministic by seed and refuses overwrite by default. Use `--overwrite` only for intentional regeneration. Local smoke/tiny split files are marked `is_paper_result: false`; paper-facing splits must come from verified real dataset roots and be preserved.
 
