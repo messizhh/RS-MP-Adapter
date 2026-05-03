@@ -62,8 +62,8 @@ class FeatureCache:
                 raise ValueError("text feature class count must match class_to_idx")
             if text_shape[1] != self.feature_dim:
                 raise ValueError("text_features and image_features must share feature_dim")
-        if self.text_prompts is not None and len(self.text_prompts) != num_classes:
-            raise ValueError("text_prompts length must match class_to_idx")
+        if self.text_prompts is not None and (len(self.text_prompts) < num_classes or len(self.text_prompts) % num_classes != 0):
+            raise ValueError("text_prompts length must match class_to_idx or be a multiple for multi-template prompts")
 
     def to_dict(self) -> dict[str, Any]:
         return {

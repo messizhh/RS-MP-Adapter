@@ -14,6 +14,8 @@ Implemented in this scaffold:
 - Runtime metadata and metrics JSON writing.
 - Feature-cache interfaces with schema and shape validation.
 - Zero-shot evaluation over cached features.
+- Backbone wrapper interfaces with dry-run fake feature support.
+- Local dry-run feature extraction and feature-cache validation.
 - Prediction, per-class accuracy, and confusion-matrix CSV exports.
 - Guarded table export from raw metrics JSON.
 - CPU-only local smoke test.
@@ -63,6 +65,43 @@ Feature cache files are machine-readable tensor/list caches saved through `src/f
 - metadata flags such as `uses_fake_data` and `uses_fake_features`
 
 Local smoke tests create fake feature caches only. Real cached-feature evaluation must provide `--feature-cache`; missing caches fail clearly.
+
+## Backbone and Feature Extraction
+
+Backbone wrappers expose a common interface:
+
+- `load_model()`
+- `encode_images(...)`
+- `encode_text(...)`
+- `get_feature_dim()`
+- `describe_preprocess()`
+
+Automatic model weight downloads are disabled. Real CLIP, RemoteCLIP, and GeoRSCLIP loading requires explicit local weights and will be enabled in a later server-side phase. Local WSL validation should use dry-run fake features only:
+
+```bash
+.venv/bin/python scripts/extract_features.py \
+  --dataset eurosat \
+  --backbone fake_backbone \
+  --dry-run \
+  --max-samples 12 \
+  --batch-size 4 \
+  --device cpu \
+  --execution-env local_wsl \
+  --run-mode smoke_test \
+  --output-dir outputs/smoke_test/features
+```
+
+Validate a cache without modifying it:
+
+```bash
+.venv/bin/python scripts/validate_feature_cache.py \
+  --feature-cache outputs/smoke_test/features/.../feature_cache.pt \
+  --output-dir outputs/smoke_test/feature_cache_validation \
+  --execution-env local_wsl \
+  --run-mode smoke_test
+```
+
+Local dry-run feature caches are not paper results.
 
 ## Cached Zero-Shot Workflow
 

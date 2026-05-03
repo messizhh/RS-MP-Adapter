@@ -1,5 +1,8 @@
-class RemoteClipBackbone:
-    """Interface placeholder for RemoteCLIP feature extraction."""
+from __future__ import annotations
 
-    def __init__(self, *args, **kwargs) -> None:
-        raise NotImplementedError("Full RemoteCLIP backbone loading is out of scope for Phase 1A.")
+from src.models.base_backbone import BaseBackbone, BackboneConfig
+
+
+class RemoteClipBackbone(BaseBackbone):
+    def __init__(self, config: BackboneConfig) -> None:
+        super().__init__(config)

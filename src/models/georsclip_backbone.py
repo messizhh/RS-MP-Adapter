@@ -1,5 +1,8 @@
-class GeoRsClipBackbone:
-    """Interface placeholder for GeoRSCLIP feature extraction."""
+from __future__ import annotations
 
-    def __init__(self, *args, **kwargs) -> None:
-        raise NotImplementedError("Full GeoRSCLIP backbone loading is out of scope for Phase 1A.")
+from src.models.base_backbone import BaseBackbone, BackboneConfig
+
+
+class GeoRsClipBackbone(BaseBackbone):
+    def __init__(self, config: BackboneConfig) -> None:
+        super().__init__(config)

@@ -14,6 +14,7 @@ from src.config.config_loader import load_configs, validate_required_fields
 from src.datasets.base_dataset import list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor, registered_datasets
 from src.features.feature_cache import load_feature_cache, make_fake_feature_cache, save_feature_cache
+from src.models.base_backbone import create_backbone
 from src.logging.experiment_logger import finish_experiment_run, start_experiment_run
 from src.utils.io import read_json, safe_write_csv
 from src.utils.seed import set_seed
@@ -52,6 +53,17 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    fake_backbone = create_backbone(
+        "fake_backbone",
+        {"backbone": {"name": "fake_backbone", "family": "fake", "feature_dim": 8}},
+        dry_run=True,
+        device=args.device,
+    ).load_model().eval()
+    if len(fake_backbone.encode_images(["a.jpg", "b.jpg"])) != 2:
+        raise RuntimeError("Fake backbone image encoding failed")
+    if len(fake_backbone.encode_text(["a satellite photo of class_0."])[0]) != fake_backbone.get_feature_dim():
+        raise RuntimeError("Fake backbone text encoding failed")
 
     with tempfile.TemporaryDirectory(prefix="rs_mp_fake_dataset_") as temp_root:
         dataset_root = Path(temp_root)
@@ -177,6 +189,60 @@ def main() -> None:
     loaded_cache = load_feature_cache(cache_path)
     result = ZeroShotClassifier().evaluate(loaded_cache)
 
+    extract_completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/extract_features.py",
+            "--dataset",
+            "eurosat",
+            "--backbone",
+            "fake_backbone",
+            "--dry-run",
+            "--max-samples",
+            "12",
+            "--batch-size",
+            "4",
+            "--device",
+            args.device,
+            "--execution-env",
+            args.execution_env,
+            "--run-mode",
+            args.run_mode,
+            "--output-dir",
+            str(output_dir / "features"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    extracted_feature_cache_path = parse_output_path(extract_completed.stdout, "feature_cache_path")
+    extracted_feature_summary_path = parse_output_path(extract_completed.stdout, "summary_path")
+    validate_completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/validate_feature_cache.py",
+            "--feature-cache",
+            str(extracted_feature_cache_path),
+            "--output-dir",
+            str(output_dir / "feature_cache_validation"),
+            "--execution-env",
+            args.execution_env,
+            "--run-mode",
+            args.run_mode,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    feature_validation_report_path = parse_output_path(validate_completed.stdout, "validation_report_path")
+    feature_validation_report = read_json(feature_validation_report_path)
+    if not feature_validation_report["is_valid"]:
+        raise RuntimeError("Extracted fake feature cache validation failed")
+    extracted_cache = load_feature_cache(extracted_feature_cache_path)
+    extracted_result = ZeroShotClassifier().evaluate(extracted_cache)
+    if extracted_result.metrics["num_samples"] != 12:
+        raise RuntimeError("Zero-shot failed to consume extracted fake feature cache")
+
     run, metadata = start_experiment_run(
         output_dir=output_dir,
         config=config,
@@ -225,6 +291,9 @@ def main() -> None:
         "log_path": str(run.log_path),
         "written_split_count": len(written_splits),
         "feature_cache_path": str(cache_path),
+        "extracted_feature_cache_path": str(extracted_feature_cache_path),
+        "extracted_feature_summary_path": str(extracted_feature_summary_path),
+        "feature_cache_validation_report_path": str(feature_validation_report_path),
         "dataset_inspection_report_path": str(inspection_report_path),
         "dataset_inspection_summary_path": str(inspection_summary_path),
     }
@@ -270,6 +339,9 @@ def main() -> None:
     print(f"per_class_accuracy_path={per_class_path}")
     print(f"confusion_matrix_path={confusion_path}")
     print(f"feature_cache_path={cache_path}")
+    print(f"extracted_feature_cache_path={extracted_feature_cache_path}")
+    print(f"extracted_feature_summary_path={extracted_feature_summary_path}")
+    print(f"feature_cache_validation_report_path={feature_validation_report_path}")
     print(f"dataset_inspection_report_path={inspection_report_path}")
     print(f"dataset_inspection_summary_path={inspection_summary_path}")
     print(f"split_dir={split_dir}")

@@ -3,3 +3,5 @@ backbone:
   family: clip
   feature_dim: 512
   weights: null
+  normalize_features: true
+  allow_download: false

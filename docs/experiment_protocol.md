@@ -8,6 +8,16 @@ Zero-shot evaluation consumes saved feature caches. A valid cache records image 
 
 The zero-shot runner computes cosine-similarity logits from cached `image_features` and `text_features`. It does not train a model and does not extract CLIP, RemoteCLIP, or GeoRSCLIP features in local smoke mode.
 
+## Backbone and Feature Extraction Boundary
+
+Backbone wrappers provide a common interface for CLIP, RemoteCLIP, GeoRSCLIP, and fake dry-run backbones. Automatic model weight downloads are disabled. If real weights are requested but unavailable, the code must fail clearly instead of downloading or silently using fake features.
+
+Local WSL feature extraction is limited to `--dry-run` fake feature caches and feature-shape validation. Full feature extraction over real datasets and real backbones is reserved for later server-side execution.
+
+Feature extraction dry-runs write a feature cache and `feature_extraction_summary.json`; both are local validation artifacts with `is_paper_result: false`.
+
+Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
+
 ## Local Smoke Outputs
 
 Smoke outputs may use fake datasets and fake features. They must include:

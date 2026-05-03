@@ -29,3 +29,5 @@ Inspection must not be treated as an experiment result.
 Use `scripts/generate_splits.py` to create deterministic train/val/test and support splits. The split JSON includes dataset root, split policy, ratios, extensions, class count, split sizes, execution environment, run mode, and `is_paper_result`.
 
 Local smoke/tiny split files under `outputs/` are validation artifacts only. Verified real split JSON files under `splits/` may be preserved for reproducibility after review.
+
+Feature extraction should consume verified split files in later server-side phases. Local dry-run feature caches may use fake sample URIs and must not be interpreted as real dataset features.

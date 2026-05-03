@@ -62,6 +62,24 @@ class FeatureCacheTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "class count"):
             cache.validate()
 
+    def test_feature_dim_validation_fails(self) -> None:
+        cache = FeatureCache(
+            image_features=[[0.0, 1.0], [1.0, 0.0]],
+            image_labels=[0, 1],
+            image_paths=["a", "b"],
+            split_name="test",
+            class_to_idx={"a": 0, "b": 1},
+            text_features=[[0.0, 1.0], [1.0, 0.0]],
+            backbone="fake",
+            dataset="fake",
+            feature_dim=3,
+            normalize_features=True,
+            created_at="",
+            source_script="tests/test_feature_cache.py",
+        )
+        with self.assertRaisesRegex(ValueError, "feature_dim"):
+            cache.validate()
+
 
 if __name__ == "__main__":
     unittest.main()
