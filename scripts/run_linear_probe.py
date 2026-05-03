@@ -35,10 +35,15 @@ def add_common_args(parser):
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--execution-env", default="local_wsl")
     parser.add_argument("--run-mode", default="smoke_test")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint", default="")
+    parser.add_argument("--finetune", action="store_true")
 
 
 def main():
     args = parse_args()
+    if args.finetune:
+        raise SystemExit("Fine-tuned linear probe training is not implemented in Phase 1F.")
     if args.execution_env == "local_wsl" and args.device != "cpu":
         raise SystemExit("Local WSL runs must use --device cpu.")
     set_seed(args.seed, deterministic=True)

@@ -24,6 +24,20 @@ Phase 1E method runners consume feature caches and can run on fake dry-run cache
 
 Implemented local-validation methods are zero-shot, linear probe skeleton, training-free Tip-Adapter, training-free Proto-Adapter, and training-free RS-CPC skeleton. Fine-tuned variants are disabled until later phases.
 
+## Phase 1F Fake Pipeline
+
+Run the local fake end-to-end pipeline with:
+
+```bash
+.venv/bin/python scripts/run_fake_pipeline.py \
+  --execution-env local_wsl \
+  --run-mode smoke_test \
+  --device cpu \
+  --output-dir outputs/smoke_test/fake_pipeline
+```
+
+This pipeline uses synthetic class-folder data and fake feature caches only. It validates dataset inspection, split generation, fake feature extraction, feature-cache validation, zero-shot, linear probe, Tip-Adapter, Proto-Adapter, RS-CPC, and default table exclusion. It does not require real dataset roots or model weights.
+
 ## Local Smoke Outputs
 
 Smoke outputs may use fake datasets and fake features. They must include:
@@ -45,6 +59,8 @@ These outputs cannot be used in paper-facing result tables.
 If no eligible results exist, it writes empty CSV files with headers and a summary JSON. It must not fabricate rows.
 
 Paper-facing tables must be generated only from explicitly approved server runs.
+
+Server script templates under `scripts/server/` are for future manual remote execution. They contain TODO placeholders for dataset roots, feature roots, weight roots, and output roots. They must not be run locally and do not indicate that any experiment has completed.
 
 ## Dataset Inspection and Split Generation
 

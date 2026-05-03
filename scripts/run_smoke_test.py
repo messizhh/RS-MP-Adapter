@@ -334,6 +334,18 @@ def main() -> None:
         "method_run_metrics_paths": method_run_paths,
         "dataset_inspection_report_path": str(inspection_report_path),
         "dataset_inspection_summary_path": str(inspection_summary_path),
+        "fake_pipeline_steps": [
+            "fake_dataset_inspection",
+            "fake_split_generation",
+            "fake_feature_extraction",
+            "feature_cache_validation",
+            "zero_shot",
+            "linear_probe",
+            "tip_adapter",
+            "proto_adapter",
+            "rs_cpc",
+            "export_table_exclusion",
+        ],
     }
     prediction_path = write_prediction_csv(run.run_dir / "predictions.csv", loaded_cache, result.predictions)
     per_class_path = safe_write_csv(
@@ -359,9 +371,6 @@ def main() -> None:
             str(output_dir),
             "--output-dir",
             str(table_dir),
-            "--tables",
-            "main",
-            "efficiency",
         ],
         check=True,
         capture_output=True,

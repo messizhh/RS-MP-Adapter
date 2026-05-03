@@ -34,8 +34,11 @@ def parse_args():
     parser.add_argument("--prototype-init", default="random_group_mean")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--fusion", default="fixed_alpha")
     parser.add_argument("--use-text-fusion", action="store_true")
     parser.add_argument("--finetune", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint", default="")
     return parser.parse_args()
 
 
@@ -43,6 +46,8 @@ def main():
     args = parse_args()
     if args.finetune:
         raise SystemExit("Fine-tuned RS-CPC is not implemented in Phase 1E.")
+    if args.execution_env == "local_wsl" and args.device != "cpu":
+        raise SystemExit("Local WSL runs must use --device cpu.")
     if args.num_prototypes_per_class not in {1, 2, 4, 8}:
         raise SystemExit("RS-CPC supports M in {1, 2, 4, 8}.")
     set_seed(args.seed, deterministic=True)
@@ -64,6 +69,7 @@ def main():
         {
             "num_prototypes_per_class": args.num_prototypes_per_class,
             "prototype_init": args.prototype_init,
+            "fusion": args.fusion,
         },
     )
     print(f"metadata_path={result['metadata_path']}")

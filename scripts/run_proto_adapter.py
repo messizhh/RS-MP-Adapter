@@ -39,12 +39,16 @@ def add_common_args(parser):
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--execution-env", default="local_wsl")
     parser.add_argument("--run-mode", default="smoke_test")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint", default="")
 
 
 def main():
     args = parse_args()
     if args.finetune:
         raise SystemExit("Proto-Adapter-F fine-tuning is not implemented in Phase 1E.")
+    if args.execution_env == "local_wsl" and args.device != "cpu":
+        raise SystemExit("Local WSL runs must use --device cpu.")
     set_seed(args.seed, deterministic=True)
     config = load_configs([args.env_config, args.config])
     cache = load_or_make_cache(args)

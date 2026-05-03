@@ -16,14 +16,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate fixed train/val/test and few-shot splits.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--dataset", required=True)
+    parser.add_argument("--backbone", default="")
+    parser.add_argument("--method", default="generate_splits")
+    parser.add_argument("--shot", type=int, default=None, help="Reserved for CLI consistency; use --shots to write split files.")
+    parser.add_argument("--seed", type=int, default=None, help="Reserved for CLI consistency; use --seeds to write split files.")
+    parser.add_argument("--split", default="", help="Reserved for CLI consistency; split generation writes new splits.")
+    parser.add_argument("--feature-cache", default="", help="Reserved for CLI consistency; split generation does not read feature caches.")
     parser.add_argument("--dataset-root", default=None)
     parser.add_argument("--shots", nargs="+", type=int, default=list(DEFAULT_SHOTS))
     parser.add_argument("--seeds", nargs="+", type=int, default=list(DEFAULT_SEEDS))
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--overwrite", action="store_true", help="Explicitly replace existing split JSON files.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-samples-per-class", type=int, default=None)
     parser.add_argument("--min-samples-per-class", type=int, default=None)
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--execution-env", default="local_wsl")
     parser.add_argument("--run-mode", default="smoke_test")
     return parser.parse_args()
@@ -31,6 +39,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.max_samples is not None and args.max_samples_per_class is None:
+        args.max_samples_per_class = args.max_samples
+    if args.execution_env == "local_wsl" and args.device != "cpu":
+        raise SystemExit("Local WSL split generation must use --device cpu.")
     config = load_yaml_config(args.config)
     dataset_cfg = config.get("dataset", {})
     root = args.dataset_root or dataset_cfg.get("root")

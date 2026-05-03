@@ -42,6 +42,22 @@ python3 scripts/run_smoke_test.py \
   --output-dir outputs/smoke_test
 ```
 
+## Local Fake Pipeline
+
+Phase 1F includes a local fake end-to-end pipeline for CPU validation only:
+
+```bash
+.venv/bin/python scripts/run_fake_pipeline.py \
+  --execution-env local_wsl \
+  --run-mode smoke_test \
+  --device cpu \
+  --output-dir outputs/smoke_test/fake_pipeline
+```
+
+The pipeline creates a synthetic class-folder dataset, inspects it, generates fake splits, extracts fake features, validates the feature cache, runs zero-shot, linear probe, Tip-Adapter, Proto-Adapter, and RS-CPC training-free skeletons, then exports tables and verifies that default table filtering excludes all smoke/fake/local rows.
+
+All local fake pipeline outputs are validation artifacts with `is_paper_result: false`, `uses_fake_data: true`, and `uses_fake_features: true`. They are not experimental results.
+
 ## Tests
 
 ```bash
@@ -135,6 +151,8 @@ Generated local smoke outputs must include:
 Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`, or `local_validation` cannot enter paper-facing tables. Fake-feature smoke metrics include explicit fake-data flags and must not be interpreted as real zero-shot accuracy.
 
 `scripts/export_tables.py` excludes local/debug/smoke/tiny/local-validation runs by default and includes only `server_full`, `server_ablation`, and `server_benchmark`. If no eligible results exist, it writes empty CSV files with headers plus a summary JSON; it never fabricates rows.
+
+Server scripts under `scripts/server/` are templates only. Before future server use, the user must manually fill TODO placeholders for dataset roots, feature roots, weight roots, and output roots on the remote server. Do not execute these templates locally.
 
 ## Training-Free Cached-Feature Methods
 

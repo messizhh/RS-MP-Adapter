@@ -17,11 +17,20 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inspect a class-folder remote sensing dataset root.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--dataset", required=True)
+    parser.add_argument("--backbone", default="")
+    parser.add_argument("--method", default="inspect_dataset")
+    parser.add_argument("--shot", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--split", default="")
+    parser.add_argument("--feature-cache", default="")
     parser.add_argument("--dataset-root", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-classes", type=int, default=None)
     parser.add_argument("--max-samples-per-class", type=int, default=None)
     parser.add_argument("--write-report", action="store_true")
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--execution-env", default="local_wsl")
     parser.add_argument("--run-mode", default="smoke_test")
     return parser.parse_args()
@@ -29,6 +38,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.max_samples is not None and args.max_samples_per_class is None:
+        args.max_samples_per_class = args.max_samples
+    if args.execution_env == "local_wsl" and args.device != "cpu":
+        raise SystemExit("Local WSL dataset inspection must use --device cpu.")
     config = load_yaml_config(args.config) if args.config else {"dataset": {"name": args.dataset, "root": args.dataset_root}}
     descriptor = descriptor_from_config(config, dataset_name=args.dataset, dataset_root=args.dataset_root)
     report = inspect_class_folder_dataset(
