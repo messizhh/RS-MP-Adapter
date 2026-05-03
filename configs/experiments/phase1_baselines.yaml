@@ -1,0 +1,19 @@
+experiment:
+  name: phase1_baselines
+  status: template
+  datasets:
+    - eurosat
+    - aid
+    - nwpu_resisc45
+  shots:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+  seeds:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5

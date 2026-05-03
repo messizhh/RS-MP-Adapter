@@ -1,0 +1,10 @@
+name: rs-mp-adapter
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - numpy
+  - pyyaml
+  - pytest
+  - pytorch

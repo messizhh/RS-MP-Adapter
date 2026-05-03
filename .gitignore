@@ -1,0 +1,22 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local generated artifacts
+outputs/
+logs/
+results/raw/
+
+# Model and tensor artifacts
+*.pt
+*.pth
+*.ckpt
+
+# Temporary fake datasets
+rs_mp_fake_dataset_*/
+fake_dataset*/
+
+# Keep source, configs, docs, tests, server templates, and reviewed official splits trackable.
+
+.venv/

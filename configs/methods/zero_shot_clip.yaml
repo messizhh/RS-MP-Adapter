@@ -1,0 +1,5 @@
+method:
+  name: zero_shot_clip
+  prompt_templates:
+    - "a satellite photo of {}."
+  save_predictions: true

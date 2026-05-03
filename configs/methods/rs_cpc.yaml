@@ -1,0 +1,34 @@
+method:
+  name: rs_cpc
+  status: interface_reserved
+  num_prototypes_per_class:
+    - 1
+    - 2
+    - 4
+    - 8
+  prototype_init:
+    choices:
+      - mean
+      - kmeans
+      - random_group_mean
+      - medoid
+  prototype_norm:
+    choices:
+      - none
+      - class-wise
+      - channel-wise
+      - both
+  fusion:
+    choices:
+      - fixed_alpha
+      - validation_tuned_alpha
+      - adaptive_alpha
+  use_text_calibration: true
+  use_margin: false
+  finetune: false
+  alpha: 1.0
+  beta: 1.0
+  temperature: 1.0
+  margin: 0.0
+  save_prototypes: true
+  save_assignments: true

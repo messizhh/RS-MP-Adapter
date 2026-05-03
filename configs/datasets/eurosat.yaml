@@ -1,0 +1,18 @@
+dataset:
+  name: eurosat
+  display_name: EuroSAT
+  root: null
+  class_folder_candidates:
+    - images
+    - RGB
+    - .
+  image_extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .tif
+    - .tiff
+  split:
+    train_ratio: 0.6
+    val_ratio: 0.2
+    test_ratio: 0.2

@@ -1,0 +1,5 @@
+execution_env: local_wsl
+run_mode: smoke_test
+device: cpu
+is_paper_result: false
+num_workers: 0

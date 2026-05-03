@@ -1,0 +1,4 @@
+method:
+  name: proto_adapter_f
+  status: interface_reserved
+  finetune: true

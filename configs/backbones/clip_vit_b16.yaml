@@ -1,0 +1,5 @@
+backbone:
+  name: clip_vit_b16
+  family: clip
+  feature_dim: 512
+  weights: null

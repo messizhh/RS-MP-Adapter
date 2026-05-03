@@ -1,0 +1,5 @@
+backbone:
+  name: remoteclip_vit_b32
+  family: remoteclip
+  feature_dim: 512
+  weights: null

@@ -1,0 +1,4 @@
+method:
+  name: tip_adapter_f
+  status: interface_reserved
+  finetune: true

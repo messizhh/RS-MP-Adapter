@@ -1,0 +1,5 @@
+backbone:
+  name: georsclip
+  family: georsclip
+  feature_dim: 512
+  weights: null

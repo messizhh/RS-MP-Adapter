@@ -1,0 +1,8 @@
+experiment:
+  name: phase1_rs_cpc
+  status: template
+  prototypes_per_class:
+    - 1
+    - 2
+    - 4
+    - 8

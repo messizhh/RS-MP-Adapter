@@ -1,0 +1,18 @@
+dataset:
+  name: nwpu_resisc45
+  display_name: NWPU-RESISC45
+  root: null
+  class_folder_candidates:
+    - NWPU-RESISC45
+    - images
+    - .
+  image_extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .tif
+    - .tiff
+  split:
+    train_ratio: 0.6
+    val_ratio: 0.2
+    test_ratio: 0.2

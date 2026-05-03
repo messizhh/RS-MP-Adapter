@@ -1,0 +1,1 @@
+"""Adapter method interfaces."""

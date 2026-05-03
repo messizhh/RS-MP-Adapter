@@ -1,0 +1,65 @@
+# RS-MP Adapter
+
+Initial reproducibility infrastructure for a PRICAI 2026 remote sensing VLM few-shot adaptation project.
+
+This repository is scoped around compact prototype-cache adaptation for remote sensing scene classification. Local WSL runs are for code validation, smoke tests, CPU tests, tiny-subset checks, and feature-shape validation only. Local smoke/debug/tiny outputs are not paper results.
+
+## Phase 1A Scope
+
+Implemented in this scaffold:
+
+- YAML config loading and overrides.
+- Local and remote environment config separation.
+- Dataset registry and class-folder split generation.
+- Runtime metadata and metrics JSON writing.
+- Feature-cache interfaces with shape validation.
+- Zero-shot evaluation interface with fake-feature smoke support.
+- CPU-only local smoke test.
+- Server script templates for later manual remote execution.
+
+Not implemented in Phase 1A:
+
+- Full CLIP, RemoteCLIP, or GeoRSCLIP feature extraction.
+- Full linear probe, Tip-Adapter, Proto-Adapter, or RS-CPC experiments.
+- Heavy dataset sweeps or paper-facing result generation.
+
+## Local Smoke Test
+
+Use `python3` on WSL systems where `python` is not on `PATH`:
+
+```bash
+python3 scripts/run_smoke_test.py \
+  --dry-run \
+  --run-mode smoke_test \
+  --execution-env local_wsl \
+  --device cpu \
+  --output-dir outputs/smoke_test
+```
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m pytest
+```
+
+`pytest` is declared in `requirements.txt` and `environment.yml`. If `python3 -m pytest` fails because pytest is not installed, install project dependencies in a virtual environment or user environment, for example:
+
+```bash
+python3 -m pip install --user -r requirements.txt
+```
+
+## Result Policy
+
+Generated local smoke outputs must include:
+
+- `execution_env: local_wsl`
+- `run_mode: smoke_test` or another local-only mode
+- `is_paper_result: false`
+- `device: cpu`
+
+Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`, or `local_validation` cannot enter paper-facing tables. Fake-feature smoke metrics include explicit fake-data flags and must not be interpreted as real zero-shot accuracy.
+
+Do not manually edit metrics JSON/CSV files. Heavy jobs should be run manually on the remote server using scripts under `scripts/server/`.
+
+Fake smoke splits are generated under `outputs/` and are ignored by Git. Real official split JSON files under `splits/` may be committed later after review.
