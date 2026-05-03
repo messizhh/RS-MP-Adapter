@@ -60,7 +60,19 @@ If no eligible results exist, it writes empty CSV files with headers and a summa
 
 Paper-facing tables must be generated only from explicitly approved server runs.
 
-Server script templates under `scripts/server/` are for future manual remote execution. They contain TODO placeholders for dataset roots, feature roots, weight roots, and output roots. They must not be run locally and do not indicate that any experiment has completed.
+Server script templates under `scripts/server/` are for future manual remote execution. They contain TODO placeholders for dataset roots, feature roots, checkpoint roots, result roots, and log roots. They must not be run locally and do not indicate that any experiment has completed.
+
+Use AGENTS.md-aligned runtime roots:
+
+- `outputs/features` for feature caches.
+- `outputs/checkpoints` for checkpoints and model artifacts.
+- `outputs/predictions` for prediction files.
+- `results/raw` for raw metrics JSON and run directories.
+- `results/tables` for exported CSV/JSON tables.
+- `results/figures` for generated figures.
+- `results/summaries` for summaries and preflight reports.
+- `logs` for logs.
+- `splits/{dataset}` for split files.
 
 ## Dataset Inspection and Split Generation
 
@@ -160,6 +172,6 @@ Splits are generated with `scripts/generate_splits.py`. Generation is determinis
 
 ## Server Dry-Preflight
 
-`scripts/server/check_server_preflight.sh` is a template for later manual server use. It checks Python, PyTorch, CUDA/GPU availability, dataset/feature/weight/output root variables, output writability, and can optionally call `scripts/check_dataset_layout.py`.
+`scripts/server/check_server_preflight.sh` is a template for later manual server use. It checks Python, PyTorch, CUDA/GPU availability, dataset/feature/checkpoint/result/log root variables, result/log writability, and can optionally call `scripts/check_dataset_layout.py`.
 
 The server preflight is non-experimental. Passing it does not mean experiments are complete or paper-ready; it only means the server appears ready for the next manual setup step.

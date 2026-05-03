@@ -5,11 +5,14 @@ set -euo pipefail
 # The user must manually edit TODO placeholders and run this on the remote GPU server.
 # TODO_DATASET_ROOT: set in dataset configs or pass to split/feature preparation commands on the server.
 # TODO_FEATURE_ROOT: directory containing precomputed real feature caches.
-# TODO_WEIGHT_ROOT: directory containing local CLIP/RemoteCLIP/GeoRSCLIP weights.
-# TODO_OUTPUT_ROOT: server output root for raw results.
+# TODO_CHECKPOINT_ROOT: directory containing local model checkpoints if required.
+# TODO_RESULT_ROOT: server result root, with raw metrics under results/raw.
+# TODO_LOG_ROOT: server log root.
 
 FEATURE_ROOT="TODO_FEATURE_ROOT"
-OUTPUT_ROOT="TODO_OUTPUT_ROOT"
+CHECKPOINT_ROOT="TODO_CHECKPOINT_ROOT"
+RESULT_ROOT="TODO_RESULT_ROOT"
+LOG_ROOT="TODO_LOG_ROOT"
 DATASET="nwpu_resisc45"
 BACKBONE="remoteclip_vit_b32"
 SHOT="16"
@@ -29,7 +32,7 @@ python scripts/run_zero_shot.py \
   --execution-env remote_server \
   --run-mode server_full \
   --device cuda \
-  --output-dir "${OUTPUT_ROOT}/raw"
+  --output-dir "${RESULT_ROOT}/raw"
 
 for METHOD in linear_probe tip_adapter proto_adapter; do
   python "scripts/run_${METHOD}.py" \
@@ -45,5 +48,5 @@ for METHOD in linear_probe tip_adapter proto_adapter; do
     --execution-env remote_server \
     --run-mode server_full \
     --device cuda \
-    --output-dir "${OUTPUT_ROOT}/raw"
+    --output-dir "${RESULT_ROOT}/raw"
 done

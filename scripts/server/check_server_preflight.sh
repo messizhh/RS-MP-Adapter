@@ -9,15 +9,21 @@ set -euo pipefail
 : "${DATASET_CONFIG:=configs/datasets/nwpu_resisc45.yaml}"
 : "${DATASET_ROOT:=TODO_DATASET_ROOT}"
 : "${FEATURE_ROOT:=TODO_FEATURE_ROOT}"
-: "${WEIGHT_ROOT:=TODO_WEIGHT_ROOT}"
-: "${OUTPUT_ROOT:=TODO_OUTPUT_ROOT}"
+: "${RESULT_ROOT:=TODO_RESULT_ROOT}"
+: "${LOG_ROOT:=TODO_LOG_ROOT}"
 : "${RUN_DATASET_LAYOUT_CHECK:=0}"
+
+if [[ -z "${CHECKPOINT_ROOT:-}" && -n "${WEIGHT_ROOT:-}" ]]; then
+  echo "warning=WEIGHT_ROOT is deprecated; use CHECKPOINT_ROOT instead." >&2
+  CHECKPOINT_ROOT="${WEIGHT_ROOT}"
+fi
+: "${CHECKPOINT_ROOT:=TODO_CHECKPOINT_ROOT}"
 
 echo "server_preflight=non_experimental"
 echo "dataset=${DATASET}"
 
-if [[ "${DATASET_ROOT}" == TODO_* || "${FEATURE_ROOT}" == TODO_* || "${WEIGHT_ROOT}" == TODO_* || "${OUTPUT_ROOT}" == TODO_* ]]; then
-  echo "error=Fill DATASET_ROOT, FEATURE_ROOT, WEIGHT_ROOT, and OUTPUT_ROOT before running on the server." >&2
+if [[ "${DATASET_ROOT}" == TODO_* || "${FEATURE_ROOT}" == TODO_* || "${CHECKPOINT_ROOT}" == TODO_* || "${RESULT_ROOT}" == TODO_* || "${LOG_ROOT}" == TODO_* ]]; then
+  echo "error=Fill DATASET_ROOT, FEATURE_ROOT, CHECKPOINT_ROOT, RESULT_ROOT, and LOG_ROOT before running on the server." >&2
   exit 2
 fi
 
@@ -49,16 +55,17 @@ PY
 
 test -d "${DATASET_ROOT}" || { echo "error=DATASET_ROOT does not exist or is not a directory: ${DATASET_ROOT}" >&2; exit 2; }
 test -d "${FEATURE_ROOT}" || { echo "error=FEATURE_ROOT does not exist or is not a directory: ${FEATURE_ROOT}" >&2; exit 2; }
-test -d "${WEIGHT_ROOT}" || { echo "error=WEIGHT_ROOT does not exist or is not a directory: ${WEIGHT_ROOT}" >&2; exit 2; }
-mkdir -p "${OUTPUT_ROOT}/preflight"
-test -w "${OUTPUT_ROOT}" || { echo "error=OUTPUT_ROOT is not writable: ${OUTPUT_ROOT}" >&2; exit 2; }
+test -d "${CHECKPOINT_ROOT}" || { echo "error=CHECKPOINT_ROOT does not exist or is not a directory: ${CHECKPOINT_ROOT}" >&2; exit 2; }
+mkdir -p "${RESULT_ROOT}/raw" "${RESULT_ROOT}/tables" "${RESULT_ROOT}/figures" "${RESULT_ROOT}/summaries/preflight" "${LOG_ROOT}"
+test -w "${RESULT_ROOT}" || { echo "error=RESULT_ROOT is not writable: ${RESULT_ROOT}" >&2; exit 2; }
+test -w "${LOG_ROOT}" || { echo "error=LOG_ROOT is not writable: ${LOG_ROOT}" >&2; exit 2; }
 
 if [[ "${RUN_DATASET_LAYOUT_CHECK}" == "1" ]]; then
   python scripts/check_dataset_layout.py \
     --config "${DATASET_CONFIG}" \
     --dataset "${DATASET}" \
     --dataset-root "${DATASET_ROOT}" \
-    --output-dir "${OUTPUT_ROOT}/preflight" \
+    --output-dir "${RESULT_ROOT}/summaries/preflight" \
     --execution-env remote_server \
     --run-mode server_benchmark
 else

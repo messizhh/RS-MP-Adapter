@@ -10,4 +10,4 @@ Prototype initialization currently supports mean, random group mean, medoid, and
 
 Phase 1F validates the training-free RS-CPC runner inside the local fake pipeline. This uses synthetic data and fake features, reports non-paper smoke metadata, and only checks implementation wiring and cache-size accounting. It is not evidence of real remote-sensing accuracy.
 
-Future real RS-CPC sweeps must run on the remote server from verified feature caches and splits. Server templates are placeholders only and must be edited with real dataset, feature, weight, and output roots before manual execution.
+Future real RS-CPC sweeps must run on the remote server from verified feature caches and splits. Server templates are placeholders only and must be edited with real dataset, feature, checkpoint, result, and log roots before manual execution.

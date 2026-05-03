@@ -152,7 +152,19 @@ Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`
 
 `scripts/export_tables.py` excludes local/debug/smoke/tiny/local-validation runs by default and includes only `server_full`, `server_ablation`, and `server_benchmark`. If no eligible results exist, it writes empty CSV files with headers plus a summary JSON; it never fabricates rows.
 
-Server scripts under `scripts/server/` are templates only. Before future server use, the user must manually fill TODO placeholders for dataset roots, feature roots, weight roots, and output roots on the remote server. Do not execute these templates locally.
+Server scripts under `scripts/server/` are templates only. Before future server use, the user must manually fill TODO placeholders for dataset roots, feature roots, checkpoint roots, result roots, and log roots on the remote server. Do not execute these templates locally.
+
+Runtime path names should follow the AGENTS.md layout:
+
+- feature caches: `outputs/features`
+- checkpoints and model artifacts: `outputs/checkpoints`
+- predictions: `outputs/predictions`
+- raw metrics: `results/raw`
+- exported tables: `results/tables`
+- figures: `results/figures`
+- summaries and preflight reports: `results/summaries`
+- logs: `logs`
+- splits: `splits/{dataset}`
 
 ## Training-Free Cached-Feature Methods
 
@@ -281,7 +293,7 @@ Before generating real split files, run the read-only layout preflight:
 
 This writes a timestamped JSON report under `outputs/preflight/{dataset}/` and checks class folders, image counts, empty classes, non-image files, duplicate or invalid class names, and whether 1/2/4/8/16-shot splits are supported. It is read-only and does not train, evaluate, extract features, download data, or download weights.
 
-For later remote onboarding, `scripts/server/check_server_preflight.sh` is a template for manual server use. It checks Python/PyTorch/CUDA/GPU availability, TODO dataset/feature/weight/output roots, output writability, and can optionally call `scripts/check_dataset_layout.py`. It is not an experiment script.
+For later remote onboarding, `scripts/server/check_server_preflight.sh` is a template for manual server use. It checks Python/PyTorch/CUDA/GPU availability, TODO dataset/feature/checkpoint/result/log roots, result/log writability, and can optionally call `scripts/check_dataset_layout.py`. It is not an experiment script.
 
 ## Split Generation
 

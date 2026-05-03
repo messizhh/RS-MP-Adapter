@@ -27,7 +27,7 @@ class ServerScriptTemplateTest(unittest.TestCase):
                 text = script.read_text(encoding="utf-8")
                 self.assertIn("Template only", text)
                 self.assertIn("manually", text)
-                for placeholder in ["TODO_DATASET_ROOT", "TODO_FEATURE_ROOT", "TODO_WEIGHT_ROOT", "TODO_OUTPUT_ROOT"]:
+                for placeholder in ["TODO_DATASET_ROOT", "TODO_FEATURE_ROOT", "TODO_CHECKPOINT_ROOT", "TODO_RESULT_ROOT", "TODO_LOG_ROOT"]:
                     self.assertIn(placeholder, text)
 
     def test_server_runner_scripts_use_remote_cuda_flags(self) -> None:
@@ -45,6 +45,10 @@ class ServerScriptTemplateTest(unittest.TestCase):
         self.assertIn("cuda_available", text)
         self.assertIn("RUN_DATASET_LAYOUT_CHECK", text)
         self.assertIn("scripts/check_dataset_layout.py", text)
+        self.assertIn("WEIGHT_ROOT is deprecated", text)
+        self.assertIn("CHECKPOINT_ROOT", text)
+        self.assertIn("RESULT_ROOT", text)
+        self.assertIn("LOG_ROOT", text)
 
     def test_server_export_template_keeps_server_filters(self) -> None:
         text = Path("scripts/server/export_tables.sh").read_text(encoding="utf-8")

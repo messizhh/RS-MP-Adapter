@@ -5,14 +5,15 @@ set -euo pipefail
 # The user must manually edit TODO placeholders and run this on the remote server after real jobs finish.
 # TODO_DATASET_ROOT: not used by table export, but must match the server experiment provenance.
 # TODO_FEATURE_ROOT: not used by table export, but must match the server experiment provenance.
-# TODO_WEIGHT_ROOT: not used by table export, but must match the server experiment provenance.
-# TODO_OUTPUT_ROOT: server output root containing raw metrics and table outputs.
+# TODO_CHECKPOINT_ROOT: not used by table export, but must match the server experiment provenance.
+# TODO_RESULT_ROOT: server result root containing raw metrics and table outputs.
+# TODO_LOG_ROOT: server log root.
 
-OUTPUT_ROOT="TODO_OUTPUT_ROOT"
+RESULT_ROOT="TODO_RESULT_ROOT"
 
 python scripts/export_tables.py \
-  --input-dir "${OUTPUT_ROOT}/raw" \
-  --output-dir "${OUTPUT_ROOT}/tables" \
+  --input-dir "${RESULT_ROOT}/raw" \
+  --output-dir "${RESULT_ROOT}/tables" \
   --tables main efficiency cache_tradeoff per_class \
   --include-run-modes server_full server_ablation server_benchmark \
   --exclude-run-modes dry_run smoke_test debug tiny_subset local_validation
