@@ -82,6 +82,11 @@ class ExportTablesTest(unittest.TestCase):
                     "fake_or_dry_run": False,
                     "uses_fake_data": False,
                     "uses_fake_features": False,
+                    "num_prototypes_per_class": 2,
+                    "compression_ratio": 0.25,
+                    "per_class_acc": [
+                        {"class_name": "annual_crop", "class_idx": 0, "num_samples": 1, "num_correct": 1, "accuracy": 1.0}
+                    ],
                 },
             )
             output_dir = root / "tables"
@@ -93,9 +98,6 @@ class ExportTablesTest(unittest.TestCase):
                     str(root / "raw"),
                     "--output-dir",
                     str(output_dir),
-                    "--tables",
-                    "main",
-                    "efficiency",
                 ],
                 check=True,
                 capture_output=True,
@@ -105,6 +107,75 @@ class ExportTablesTest(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["run_mode"], "server_full")
+            with (output_dir / "cache_tradeoff.csv").open("r", encoding="utf-8", newline="") as handle:
+                cache_rows = list(csv.DictReader(handle))
+            self.assertEqual(cache_rows[0]["num_prototypes_per_class"], "2")
+            with (output_dir / "per_class_accuracy.csv").open("r", encoding="utf-8", newline="") as handle:
+                per_class_rows = list(csv.DictReader(handle))
+            self.assertEqual(per_class_rows[0]["class_name"], "annual_crop")
+
+    def test_export_tables_requires_fake_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            metrics_path = root / "raw" / "server_fake" / "metrics.json"
+            safe_write_json(
+                metrics_path,
+                {
+                    "dataset": "eurosat",
+                    "shot": 1,
+                    "backbone": "fake_backbone",
+                    "method": "zero_shot_clip",
+                    "seed": 1,
+                    "top1_acc": 0.5,
+                    "cache_entries": 0,
+                    "trainable_params": 0,
+                    "training_time_sec": 0.0,
+                    "inference_time_sec": 1.0,
+                    "images_per_second": 10.0,
+                    "gpu_memory_mb": None,
+                    "run_mode": "server_full",
+                    "execution_env": "remote_server",
+                    "is_paper_result": True,
+                    "fake_or_dry_run": True,
+                    "uses_fake_data": False,
+                    "uses_fake_features": True,
+                },
+            )
+            default_dir = root / "tables_default"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/export_tables.py",
+                    "--input-dir",
+                    str(root / "raw"),
+                    "--output-dir",
+                    str(default_dir),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with (default_dir / "main_accuracy.csv").open("r", encoding="utf-8", newline="") as handle:
+                self.assertEqual(list(csv.DictReader(handle)), [])
+
+            fake_dir = root / "tables_fake"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/export_tables.py",
+                    "--input-dir",
+                    str(root / "raw"),
+                    "--output-dir",
+                    str(fake_dir),
+                    "--include-fake-results",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with (fake_dir / "main_accuracy.csv").open("r", encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 1)
 
 
 def extract_path(stdout: str, key: str) -> Path:

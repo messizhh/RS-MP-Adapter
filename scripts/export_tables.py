@@ -19,10 +19,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export result tables from metrics JSON files.")
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--tables", nargs="+", default=["main", "efficiency"])
+    parser.add_argument("--tables", nargs="+", default=["main", "efficiency", "cache_tradeoff", "per_class"])
     parser.add_argument("--include-run-modes", nargs="+", default=DEFAULT_INCLUDE_RUN_MODES)
     parser.add_argument("--exclude-run-modes", nargs="+", default=DEFAULT_EXCLUDE_RUN_MODES)
     parser.add_argument("--allow-local-results", action="store_true")
+    parser.add_argument("--include-fake-results", action="store_true")
     return parser.parse_args()
 
 
@@ -39,6 +40,7 @@ def main() -> None:
             include_run_modes=args.include_run_modes,
             exclude_run_modes=args.exclude_run_modes,
             allow_local_results=args.allow_local_results,
+            include_fake_results=args.include_fake_results,
         )
     ]
 
@@ -47,6 +49,10 @@ def main() -> None:
         outputs["main_accuracy"] = str(export_main_accuracy(eligible, output_dir / "main_accuracy.csv"))
     if "efficiency" in args.tables:
         outputs["efficiency"] = str(export_efficiency(eligible, output_dir / "efficiency.csv"))
+    if "cache_tradeoff" in args.tables:
+        outputs["cache_tradeoff"] = str(export_cache_tradeoff(eligible, output_dir / "cache_tradeoff.csv"))
+    if "per_class" in args.tables or "per_class_accuracy" in args.tables:
+        outputs["per_class_accuracy"] = str(export_per_class_accuracy(eligible, output_dir / "per_class_accuracy.csv"))
 
     summary = {
         "input_dir": str(Path(args.input_dir)),
@@ -56,6 +62,7 @@ def main() -> None:
         "include_run_modes": args.include_run_modes,
         "exclude_run_modes": args.exclude_run_modes,
         "allow_local_results": args.allow_local_results,
+        "include_fake_results": args.include_fake_results,
         "outputs": outputs,
         "message": "No eligible results found; empty CSV files contain headers only." if not eligible else "Exported eligible result rows.",
     }
@@ -84,6 +91,7 @@ def is_eligible_result(
     include_run_modes: list[str],
     exclude_run_modes: list[str],
     allow_local_results: bool,
+    include_fake_results: bool,
 ) -> bool:
     run_mode = str(result.get("run_mode", ""))
     if run_mode in exclude_run_modes:
@@ -94,7 +102,7 @@ def is_eligible_result(
         return False
     if result.get("is_paper_result") is False and not allow_local_results:
         return False
-    if result.get("fake_or_dry_run") or result.get("uses_fake_data") or result.get("uses_fake_features"):
+    if not include_fake_results and (result.get("fake_or_dry_run") or result.get("uses_fake_data") or result.get("uses_fake_features")):
         return False
     return True
 
@@ -136,6 +144,87 @@ def export_efficiency(results: list[dict[str, Any]], path: Path) -> Path:
         for result in results
     ]
     return safe_write_csv(unique_path(path), rows, ["dataset", "shot", "backbone", "method", "cache_entries", "trainable_params", "training_time_sec", "inference_time_sec", "images_per_second", "gpu_memory_mb", "result_json_path"])
+
+
+def export_cache_tradeoff(results: list[dict[str, Any]], path: Path) -> Path:
+    rows = [
+        {
+            "dataset": result.get("dataset", ""),
+            "shot": result.get("shot", ""),
+            "backbone": result.get("backbone", ""),
+            "method": result.get("method", ""),
+            "num_prototypes_per_class": result.get("num_prototypes_per_class", result.get("prototypes_per_class", "")),
+            "cache_entries": result.get("cache_entries", ""),
+            "compression_ratio": result.get("compression_ratio", ""),
+            "seed": result.get("seed", ""),
+            "top1_acc": result.get("top1_acc", ""),
+            "inference_time_sec": result.get("inference_time_sec", ""),
+            "images_per_second": result.get("images_per_second", ""),
+            "result_json_path": result.get("_metrics_json_path", result.get("result_json_path", "")),
+        }
+        for result in results
+    ]
+    return safe_write_csv(
+        unique_path(path),
+        rows,
+        [
+            "dataset",
+            "shot",
+            "backbone",
+            "method",
+            "num_prototypes_per_class",
+            "cache_entries",
+            "compression_ratio",
+            "seed",
+            "top1_acc",
+            "inference_time_sec",
+            "images_per_second",
+            "result_json_path",
+        ],
+    )
+
+
+def export_per_class_accuracy(results: list[dict[str, Any]], path: Path) -> Path:
+    rows = []
+    for result in results:
+        per_class_rows = normalize_per_class_accuracy(result.get("per_class_acc"))
+        for per_class_row in per_class_rows:
+            rows.append(
+                {
+                    "dataset": result.get("dataset", ""),
+                    "shot": result.get("shot", ""),
+                    "backbone": result.get("backbone", ""),
+                    "method": result.get("method", ""),
+                    "seed": result.get("seed", ""),
+                    "class_name": per_class_row.get("class_name", ""),
+                    "class_idx": per_class_row.get("class_idx", ""),
+                    "num_samples": per_class_row.get("num_samples", ""),
+                    "num_correct": per_class_row.get("num_correct", ""),
+                    "accuracy": per_class_row.get("accuracy", ""),
+                    "result_json_path": result.get("_metrics_json_path", result.get("result_json_path", "")),
+                }
+            )
+    return safe_write_csv(
+        unique_path(path),
+        rows,
+        ["dataset", "shot", "backbone", "method", "seed", "class_name", "class_idx", "num_samples", "num_correct", "accuracy", "result_json_path"],
+    )
+
+
+def normalize_per_class_accuracy(per_class_acc: Any) -> list[dict[str, Any]]:
+    if isinstance(per_class_acc, list):
+        return [row for row in per_class_acc if isinstance(row, dict)]
+    if isinstance(per_class_acc, dict):
+        rows = []
+        for class_name, value in sorted(per_class_acc.items(), key=lambda item: str(item[0])):
+            if isinstance(value, dict):
+                row = dict(value)
+                row.setdefault("class_name", class_name)
+                rows.append(row)
+            else:
+                rows.append({"class_name": class_name, "accuracy": value})
+        return rows
+    return []
 
 
 def unique_path(path: Path) -> Path:

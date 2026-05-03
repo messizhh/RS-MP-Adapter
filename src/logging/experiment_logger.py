@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config.config_loader import save_config_snapshot
+from src.logging.result_schema import validate_metadata_schema, validate_metrics_schema
 from src.logging.system_info import get_system_info
 from src.utils.io import write_json_no_overwrite
 from src.utils.timing import utc_now_iso
@@ -140,6 +141,11 @@ def finish_experiment_run(
     metrics.setdefault("log_path", str(run.log_path))
     metrics.setdefault("start_time", metadata["start_time"])
     metrics.setdefault("end_time", end_time)
+    metrics.setdefault("uses_fake_data", False)
+    metrics.setdefault("uses_fake_features", False)
+    metrics.setdefault("fake_or_dry_run", metadata["run_mode"] in LOCAL_RUN_MODES)
+    validate_metadata_schema(metadata)
+    validate_metrics_schema(metrics)
     metrics_path = write_json_no_overwrite(run.metrics_path, metrics)
     metadata_path = write_json_no_overwrite(run.metadata_path, metadata)
     with run.log_path.open("a", encoding="utf-8") as handle:
