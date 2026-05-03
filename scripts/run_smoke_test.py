@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -15,7 +16,7 @@ from src.datasets.dataset_registry import get_dataset_descriptor, registered_dat
 from src.datasets.split_generator import generate_split_files
 from src.features.feature_cache import load_feature_cache, make_fake_feature_cache, save_feature_cache
 from src.logging.experiment_logger import finish_experiment_run, start_experiment_run
-from src.utils.io import read_json
+from src.utils.io import read_json, safe_write_csv
 from src.utils.seed import set_seed
 from src.utils.timing import utc_now_iso
 
@@ -107,9 +108,11 @@ def main() -> None:
         "shot": 1,
         "seed": args.seed,
         "device": args.device,
-        "top1_acc": result.top1_acc,
-        "num_samples": result.num_samples,
-        "num_classes": result.num_classes,
+        "top1_acc": result.metrics["top1_acc"],
+        "num_samples": result.metrics["num_samples"],
+        "num_classes": result.metrics["num_classes"],
+        "per_class_acc": result.metrics["per_class_acc"],
+        "confusion_matrix": result.metrics["confusion_matrix"],
         "cache_entries": 0,
         "trainable_params": 0,
         "training_time_sec": 0.0,
@@ -125,20 +128,90 @@ def main() -> None:
         "config_snapshot_path": str(run.config_snapshot_path),
         "split_path": str(split_path),
         "checkpoint_path": None,
-        "prediction_path": None,
+        "prediction_path": "",
+        "per_class_accuracy_path": "",
+        "confusion_matrix_path": "",
         "log_path": str(run.log_path),
         "written_split_count": len(written_splits),
         "feature_cache_path": str(cache_path),
     }
+    prediction_path = write_prediction_csv(run.run_dir / "predictions.csv", loaded_cache, result.predictions)
+    per_class_path = safe_write_csv(
+        run.run_dir / "per_class_accuracy.csv",
+        result.metrics["per_class_acc"],
+        ["class_name", "class_idx", "num_samples", "num_correct", "accuracy"],
+    )
+    confusion_path = write_confusion_matrix_csv(run.run_dir / "confusion_matrix.csv", result.metrics["confusion_matrix"])
+    metrics["prediction_path"] = str(prediction_path)
+    metrics["per_class_accuracy_path"] = str(per_class_path)
+    metrics["confusion_matrix_path"] = str(confusion_path)
     metadata_path, metrics_path = finish_experiment_run(run, metadata, metrics)
     metadata_json = read_json(metadata_path)
     metrics_json = read_json(metrics_path)
     if metadata_json["is_paper_result"] or metrics_json["is_paper_result"]:
         raise RuntimeError("Local smoke output was incorrectly marked as paper result.")
+    table_dir = output_dir / "tables" / run.run_id
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_tables.py",
+            "--input-dir",
+            str(output_dir),
+            "--output-dir",
+            str(table_dir),
+            "--tables",
+            "main",
+            "efficiency",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    table_summary_path = parse_output_path(completed.stdout, "summary_path")
+    table_summary = read_json(table_summary_path)
+    if table_summary["num_eligible_results"] != 0:
+        raise RuntimeError("Smoke results were not excluded by export_tables.py")
     print(f"metadata_path={metadata_path}")
     print(f"metrics_path={metrics_path}")
+    print(f"prediction_path={prediction_path}")
+    print(f"per_class_accuracy_path={per_class_path}")
+    print(f"confusion_matrix_path={confusion_path}")
     print(f"feature_cache_path={cache_path}")
     print(f"split_dir={split_dir}")
+    print(f"table_summary_path={table_summary_path}")
+    for key, value in table_summary.get("outputs", {}).items():
+        print(f"table_{key}_path={value}")
+
+
+def write_prediction_csv(path: Path, cache, predictions: list[int]) -> Path:
+    rows = []
+    for index, (image_path, label, prediction) in enumerate(zip(cache.image_paths, cache.image_labels, predictions)):
+        rows.append(
+            {
+                "sample_id": index,
+                "path": image_path,
+                "label": int(label),
+                "pred": int(prediction),
+                "correct": int(label == prediction),
+                "split": cache.split_name,
+            }
+        )
+    return safe_write_csv(path, rows, ["sample_id", "path", "label", "pred", "correct", "split"])
+
+
+def write_confusion_matrix_csv(path: Path, matrix: list[list[int]]) -> Path:
+    rows = []
+    for label_idx, row in enumerate(matrix):
+        for pred_idx, count in enumerate(row):
+            rows.append({"label": label_idx, "pred": pred_idx, "count": count})
+    return safe_write_csv(path, rows, ["label", "pred", "count"])
+
+
+def parse_output_path(stdout: str, key: str) -> Path:
+    for line in stdout.splitlines():
+        if line.startswith(f"{key}="):
+            return Path(line.split("=", 1)[1])
+    raise RuntimeError(f"Could not find {key} in command output: {stdout}")
 
 
 if __name__ == "__main__":

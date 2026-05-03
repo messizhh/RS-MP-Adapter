@@ -46,6 +46,8 @@ class SmokeScriptTest(unittest.TestCase):
             metrics = read_json(metrics_path)
             for required_file in ["config.yaml", "metadata.json", "metrics.json", "log.txt"]:
                 self.assertTrue((metadata_path.parent / required_file).exists())
+            for required_file in ["predictions.csv", "per_class_accuracy.csv", "confusion_matrix.csv"]:
+                self.assertTrue((metadata_path.parent / required_file).exists())
             metadata_required = {
                 "run_id",
                 "git_commit",
@@ -111,6 +113,9 @@ class SmokeScriptTest(unittest.TestCase):
             self.assertTrue(metrics["uses_fake_features"])
             self.assertTrue(metrics["fake_or_dry_run"])
             self.assertFalse(metrics["is_real_evaluation"])
+            table_summary_path = extract_path(completed.stdout, "table_summary_path")
+            table_summary = read_json(table_summary_path)
+            self.assertEqual(table_summary["num_eligible_results"], 0)
 
     def test_unique_run_dir_creation_does_not_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

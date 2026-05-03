@@ -4,7 +4,7 @@ Initial reproducibility infrastructure for a PRICAI 2026 remote sensing VLM few-
 
 This repository is scoped around compact prototype-cache adaptation for remote sensing scene classification. Local WSL runs are for code validation, smoke tests, CPU tests, tiny-subset checks, and feature-shape validation only. Local smoke/debug/tiny outputs are not paper results.
 
-## Phase 1A Scope
+## Current Scope
 
 Implemented in this scaffold:
 
@@ -12,12 +12,14 @@ Implemented in this scaffold:
 - Local and remote environment config separation.
 - Dataset registry and class-folder split generation.
 - Runtime metadata and metrics JSON writing.
-- Feature-cache interfaces with shape validation.
-- Zero-shot evaluation interface with fake-feature smoke support.
+- Feature-cache interfaces with schema and shape validation.
+- Zero-shot evaluation over cached features.
+- Prediction, per-class accuracy, and confusion-matrix CSV exports.
+- Guarded table export from raw metrics JSON.
 - CPU-only local smoke test.
 - Server script templates for later manual remote execution.
 
-Not implemented in Phase 1A:
+Not implemented yet:
 
 - Full CLIP, RemoteCLIP, or GeoRSCLIP feature extraction.
 - Full linear probe, Tip-Adapter, Proto-Adapter, or RS-CPC experiments.
@@ -49,6 +51,37 @@ python3 -m pytest
 python3 -m pip install --user -r requirements.txt
 ```
 
+## Feature Cache Schema
+
+Feature cache files are machine-readable tensor/list caches saved through `src/features/feature_cache.py`. They contain:
+
+- `image_features`, `image_labels`, `image_paths`
+- `split_name`, `class_to_idx`
+- optional `text_features`, optional `text_prompts`
+- `backbone`, `dataset`, `feature_dim`
+- `normalize_features`, `created_at`, `source_script`
+- metadata flags such as `uses_fake_data` and `uses_fake_features`
+
+Local smoke tests create fake feature caches only. Real cached-feature evaluation must provide `--feature-cache`; missing caches fail clearly.
+
+## Cached Zero-Shot Workflow
+
+```bash
+python3 scripts/run_zero_shot.py \
+  --config configs/methods/zero_shot_clip.yaml \
+  --dataset eurosat \
+  --backbone clip_vit_b16 \
+  --feature-cache outputs/features/example.pt \
+  --split splits/eurosat/shot_1_seed1.json \
+  --seed 1 \
+  --execution-env local_wsl \
+  --run-mode tiny_subset \
+  --device cpu \
+  --output-dir results/raw
+```
+
+This command evaluates logits from cached `image_features` and `text_features`; it does not extract CLIP features or train a model.
+
 ## Result Policy
 
 Generated local smoke outputs must include:
@@ -59,6 +92,8 @@ Generated local smoke outputs must include:
 - `device: cpu`
 
 Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`, or `local_validation` cannot enter paper-facing tables. Fake-feature smoke metrics include explicit fake-data flags and must not be interpreted as real zero-shot accuracy.
+
+`scripts/export_tables.py` excludes local/debug/smoke/tiny/local-validation runs by default and includes only `server_full`, `server_ablation`, and `server_benchmark`. If no eligible results exist, it writes empty CSV files with headers plus a summary JSON; it never fabricates rows.
 
 Do not manually edit metrics JSON/CSV files. Heavy jobs should be run manually on the remote server using scripts under `scripts/server/`.
 
