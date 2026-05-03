@@ -66,4 +66,24 @@ Server script templates under `scripts/server/` are for future manual remote exe
 
 Before any real feature extraction or baseline evaluation, inspect the dataset root with `scripts/inspect_dataset.py`. Critical failures include a missing root, no class-folder layout, empty classes, too few samples per class, or a known expected class count mismatch.
 
+Phase 1G adds a read-only dataset layout preflight:
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root /path/from/user/or/server/config \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+The preflight writes a timestamped JSON report under `outputs/preflight/{dataset}/` with dataset name, root, class counts, total image count, warnings, per-shot support for 1/2/4/8/16, and `is_ready_for_split_generation`. It is a directory check only; it must not modify datasets, extract features, train, evaluate, download data, or download weights.
+
 Splits are generated with `scripts/generate_splits.py`. Generation is deterministic by seed and refuses overwrite by default. Use `--overwrite` only for intentional regeneration. Local smoke/tiny split files are marked `is_paper_result: false`; paper-facing splits must come from verified real dataset roots and be preserved.
+
+## Server Dry-Preflight
+
+`scripts/server/check_server_preflight.sh` is a template for later manual server use. It checks Python, PyTorch, CUDA/GPU availability, dataset/feature/weight/output root variables, output writability, and can optionally call `scripts/check_dataset_layout.py`.
+
+The server preflight is non-experimental. Passing it does not mean experiments are complete or paper-ready; it only means the server appears ready for the next manual setup step.

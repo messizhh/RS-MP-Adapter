@@ -202,6 +202,22 @@ Inspect a dataset root before generating official splits:
 
 Dataset roots must come from config or CLI. Do not hard-code private paths.
 
+Before generating real split files, run the read-only layout preflight:
+
+```bash
+.venv/bin/python scripts/check_dataset_layout.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root /path/from/user/or/server/config \
+  --output-dir outputs/preflight \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+This writes a timestamped JSON report under `outputs/preflight/{dataset}/` and checks class folders, image counts, empty classes, non-image files, duplicate or invalid class names, and whether 1/2/4/8/16-shot splits are supported. It is read-only and does not train, evaluate, extract features, download data, or download weights.
+
+For later remote onboarding, `scripts/server/check_server_preflight.sh` is a template for manual server use. It checks Python/PyTorch/CUDA/GPU availability, TODO dataset/feature/weight/output roots, output writability, and can optionally call `scripts/check_dataset_layout.py`. It is not an experiment script.
+
 ## Split Generation
 
 Generate fixed splits only after dataset inspection passes:
