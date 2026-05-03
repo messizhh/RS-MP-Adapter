@@ -5,7 +5,7 @@ from pathlib import Path
 from random import Random
 from typing import Iterable
 
-from src.datasets.base_dataset import DatasetSample, list_class_folder_samples
+from src.datasets.base_dataset import DatasetDescriptor, DatasetSample, list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor
 from src.utils.io import write_json
 from src.utils.timing import utc_now_iso
@@ -33,8 +33,8 @@ def split_samples_by_class(
     train: list[DatasetSample] = []
     val: list[DatasetSample] = []
     test: list[DatasetSample] = []
-    for class_samples in by_class.values():
-        shuffled = list(class_samples)
+    for label in sorted(by_class):
+        shuffled = sorted(by_class[label], key=lambda item: item.path)
         rng.shuffle(shuffled)
         n_total = len(shuffled)
         n_train = max(1, int(n_total * train_ratio))
@@ -54,9 +54,12 @@ def build_support_set(train_samples: Iterable[DatasetSample], shot: int, seed: i
         by_class[sample.label].append(sample)
     support: list[DatasetSample] = []
     for label in sorted(by_class):
-        candidates = list(by_class[label])
+        candidates = sorted(by_class[label], key=lambda item: item.path)
         if len(candidates) < shot:
-            raise ValueError(f"Class {label} has {len(candidates)} train samples, fewer than shot={shot}")
+            class_name = candidates[0].class_name if candidates else str(label)
+            raise ValueError(
+                f"Class {class_name} (label={label}) has {len(candidates)} train samples, fewer than shot={shot}"
+            )
         rng.shuffle(candidates)
         support.extend(candidates[:shot])
     return sorted(support, key=lambda item: item.path)
@@ -72,6 +75,13 @@ def make_split_payload(
     support: list[DatasetSample],
     class_to_idx: dict[str, int],
     source_script: str,
+    dataset_root: str = "",
+    split_policy: str = "class_stratified_random",
+    split_ratios: dict[str, float] | None = None,
+    image_extensions: list[str] | None = None,
+    execution_env: str = "local_wsl",
+    run_mode: str = "smoke_test",
+    is_paper_result: bool = False,
 ) -> dict[str, object]:
     return {
         "dataset": dataset,
@@ -84,6 +94,18 @@ def make_split_payload(
         "class_to_idx": class_to_idx,
         "created_at": utc_now_iso(),
         "source_script": source_script,
+        "dataset_root": dataset_root,
+        "split_policy": split_policy,
+        "split_ratios": split_ratios or {"train": 0.6, "val": 0.2, "test": 0.2},
+        "image_extensions": image_extensions or [],
+        "num_classes": len(class_to_idx),
+        "num_train": len(train),
+        "num_val": len(val),
+        "num_test": len(test),
+        "num_support": len(support),
+        "execution_env": execution_env,
+        "run_mode": run_mode,
+        "is_paper_result": is_paper_result,
     }
 
 
@@ -97,19 +119,73 @@ def generate_split_files(
     val_ratio: float = 0.2,
     source_script: str = "scripts/generate_splits.py",
     overwrite: bool = False,
+    dry_run: bool = False,
+    max_samples_per_class: int | None = None,
+    min_samples_per_class: int | None = None,
+    descriptor: DatasetDescriptor | None = None,
+    split_policy: str = "class_stratified_random",
+    execution_env: str = "local_wsl",
+    run_mode: str = "smoke_test",
+    is_paper_result: bool = False,
 ) -> list[Path]:
-    descriptor = get_dataset_descriptor(dataset, root=root)
-    samples, class_to_idx = list_class_folder_samples(descriptor)
+    descriptor = descriptor or get_dataset_descriptor(dataset, root=root)
+    samples, class_to_idx = list_class_folder_samples(
+        descriptor,
+        max_samples_per_class=max_samples_per_class,
+        min_samples_per_class=min_samples_per_class,
+    )
     output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    split_ratios = {"train": train_ratio, "val": val_ratio, "test": max(0.0, 1.0 - train_ratio - val_ratio)}
 
     for seed in seeds:
         train, val, test = split_samples_by_class(samples, seed=seed, train_ratio=train_ratio, val_ratio=val_ratio)
-        base_payload = make_split_payload(dataset, seed, None, train, val, test, [], class_to_idx, source_script)
-        written.append(write_json(output / f"base_split_seed{seed}.json", base_payload, overwrite=overwrite))
+        base_payload = make_split_payload(
+            dataset,
+            seed,
+            None,
+            train,
+            val,
+            test,
+            [],
+            class_to_idx,
+            source_script,
+            dataset_root=str(root),
+            split_policy=split_policy,
+            split_ratios=split_ratios,
+            image_extensions=list(descriptor.image_extensions),
+            execution_env=execution_env,
+            run_mode=run_mode,
+            is_paper_result=is_paper_result,
+        )
+        base_path = output / f"base_split_seed{seed}.json"
+        if not dry_run:
+            written.append(write_json(base_path, base_payload, overwrite=overwrite))
+        else:
+            written.append(base_path)
         for shot in shots:
             support = build_support_set(train, shot=shot, seed=seed)
-            payload = make_split_payload(dataset, seed, shot, train, val, test, support, class_to_idx, source_script)
-            written.append(write_json(output / f"shot_{shot}_seed{seed}.json", payload, overwrite=overwrite))
+            payload = make_split_payload(
+                dataset,
+                seed,
+                shot,
+                train,
+                val,
+                test,
+                support,
+                class_to_idx,
+                source_script,
+                dataset_root=str(root),
+                split_policy=split_policy,
+                split_ratios=split_ratios,
+                image_extensions=list(descriptor.image_extensions),
+                execution_env=execution_env,
+                run_mode=run_mode,
+                is_paper_result=is_paper_result,
+            )
+            path = output / f"shot_{shot}_seed{seed}.json"
+            if not dry_run:
+                written.append(write_json(path, payload, overwrite=overwrite))
+            else:
+                written.append(path)
     return written

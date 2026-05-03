@@ -95,6 +95,58 @@ Outputs with `run_mode` equal to `smoke_test`, `dry_run`, `debug`, `tiny_subset`
 
 `scripts/export_tables.py` excludes local/debug/smoke/tiny/local-validation runs by default and includes only `server_full`, `server_ablation`, and `server_benchmark`. If no eligible results exist, it writes empty CSV files with headers plus a summary JSON; it never fabricates rows.
 
+## Dataset Inspection
+
+Expected dataset layout is class-folder based. The loader searches configured candidate roots and then expects one directory per class:
+
+```text
+EuroSAT root/
+  RGB/ or images/ or ./
+    AnnualCrop/
+    Forest/
+
+AID root/
+  AID/ or images/ or ./
+    Airport/
+    Bridge/
+
+NWPU-RESISC45 root/
+  NWPU-RESISC45/ or images/ or ./
+    airplane/
+    airport/
+```
+
+Inspect a dataset root before generating official splits:
+
+```bash
+.venv/bin/python scripts/inspect_dataset.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root /path/from/user/or/server/config \
+  --output-dir outputs/dataset_inspection \
+  --execution-env local_wsl \
+  --run-mode local_validation \
+  --write-report
+```
+
+Dataset roots must come from config or CLI. Do not hard-code private paths.
+
+## Split Generation
+
+Generate fixed splits only after dataset inspection passes:
+
+```bash
+.venv/bin/python scripts/generate_splits.py \
+  --config configs/datasets/eurosat.yaml \
+  --dataset eurosat \
+  --dataset-root /path/from/user/or/server/config \
+  --shots 1 2 4 8 16 \
+  --seeds 1 2 3 4 5 \
+  --output-dir splits/eurosat
+```
+
+Split generation refuses overwrite by default. Use `--overwrite` only when intentionally replacing generated split JSON files. Local smoke/tiny split files are not paper results; verified real paper-facing splits should be preserved.
+
 Do not manually edit metrics JSON/CSV files. Heavy jobs should be run manually on the remote server using scripts under `scripts/server/`.
 
 Fake smoke splits are generated under `outputs/` and are ignored by Git. Real official split JSON files under `splits/` may be committed later after review.

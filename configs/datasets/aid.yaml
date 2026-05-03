@@ -2,10 +2,16 @@ dataset:
   name: aid
   display_name: AID
   root: null
+  output_split_root: splits/aid
   class_folder_candidates:
     - AID
     - images
     - .
+  class_name_mapping: {}
+  expected_num_classes: 30
+  min_images_per_class: 1
+  ignore_hidden_files: true
+  follow_symlinks: false
   image_extensions:
     - .jpg
     - .jpeg
@@ -13,6 +19,7 @@ dataset:
     - .tif
     - .tiff
   split:
+    policy: class_stratified_random
     train_ratio: 0.6
     val_ratio: 0.2
     test_ratio: 0.2

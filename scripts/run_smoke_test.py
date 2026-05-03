@@ -13,7 +13,6 @@ from src.baselines.zero_shot import ZeroShotClassifier
 from src.config.config_loader import load_configs, validate_required_fields
 from src.datasets.base_dataset import list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor, registered_datasets
-from src.datasets.split_generator import generate_split_files
 from src.features.feature_cache import load_feature_cache, make_fake_feature_cache, save_feature_cache
 from src.logging.experiment_logger import finish_experiment_run, start_experiment_run
 from src.utils.io import read_json, safe_write_csv
@@ -32,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def create_fake_dataset(root: Path, classes: int = 3, samples_per_class: int = 20) -> None:
+def create_fake_dataset(root: Path, classes: int = 10, samples_per_class: int = 20) -> None:
     for class_idx in range(classes):
         class_dir = root / f"class_{class_idx}"
         class_dir.mkdir(parents=True, exist_ok=True)
@@ -60,23 +59,115 @@ def main() -> None:
         assert "eurosat" in registered_datasets()
         descriptor = get_dataset_descriptor("eurosat", root=dataset_root)
         samples, class_to_idx = list_class_folder_samples(descriptor)
-        if len(samples) != 60 or len(class_to_idx) != 3:
+        if len(samples) != 200 or len(class_to_idx) != 10:
             raise RuntimeError("Dataset registry or class-folder reading failed.")
+
+        inspection_dir = output_dir / "dataset_inspection" / utc_now_iso().replace(":", "").replace("-", "").split(".")[0]
+        inspect_completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/inspect_dataset.py",
+                "--config",
+                "configs/datasets/eurosat.yaml",
+                "--dataset",
+                "eurosat",
+                "--dataset-root",
+                str(dataset_root),
+                "--output-dir",
+                str(inspection_dir),
+                "--execution-env",
+                args.execution_env,
+                "--run-mode",
+                args.run_mode,
+                "--write-report",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        inspection_report_path = parse_output_path(inspect_completed.stdout, "report_path")
+        inspection_summary_path = parse_output_path(inspect_completed.stdout, "class_summary_path")
+        inspection_report = read_json(inspection_report_path)
+        if not inspection_report["is_valid"] or inspection_report["num_classes"] != 10:
+            raise RuntimeError("Fake dataset inspection failed")
 
         split_stamp = utc_now_iso().replace(":", "").replace("-", "").split(".")[0]
         split_dir = output_dir / "splits" / f"smoke_seed{args.seed}_{split_stamp}"
-        written_splits = generate_split_files(
-            dataset="eurosat",
-            root=dataset_root,
-            output_dir=split_dir,
-            shots=[1, 2, 4, 8],
-            seeds=[args.seed],
-            source_script="scripts/run_smoke_test.py",
+        split_completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/generate_splits.py",
+                "--config",
+                "configs/datasets/eurosat.yaml",
+                "--dataset",
+                "eurosat",
+                "--dataset-root",
+                str(dataset_root),
+                "--output-dir",
+                str(split_dir),
+                "--shots",
+                "1",
+                "2",
+                "4",
+                "8",
+                "--seeds",
+                str(args.seed),
+                "--execution-env",
+                args.execution_env,
+                "--run-mode",
+                args.run_mode,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
         )
+        written_splits = [line.split("=", 1)[1] for line in split_completed.stdout.splitlines() if line.startswith("written_path=")]
         split_path = split_dir / f"shot_1_seed{args.seed}.json"
         split_payload = read_json(split_path)
-        if split_payload["shot"] != 1 or len(split_payload["support"]) != 3:
+        if split_payload["shot"] != 1 or len(split_payload["support"]) != 10:
             raise RuntimeError("Few-shot support split validation failed.")
+        required_split_fields = {
+            "dataset_root",
+            "split_policy",
+            "split_ratios",
+            "image_extensions",
+            "num_classes",
+            "num_train",
+            "num_val",
+            "num_test",
+            "num_support",
+            "is_paper_result",
+        }
+        if not required_split_fields.issubset(split_payload):
+            raise RuntimeError("Split JSON is missing required Phase 1C metadata fields")
+        if split_payload["is_paper_result"]:
+            raise RuntimeError("Smoke split was incorrectly marked as paper result")
+        no_overwrite_check = subprocess.run(
+            [
+                sys.executable,
+                "scripts/generate_splits.py",
+                "--config",
+                "configs/datasets/eurosat.yaml",
+                "--dataset",
+                "eurosat",
+                "--dataset-root",
+                str(dataset_root),
+                "--output-dir",
+                str(split_dir),
+                "--shots",
+                "1",
+                "--seeds",
+                str(args.seed),
+                "--execution-env",
+                args.execution_env,
+                "--run-mode",
+                args.run_mode,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if no_overwrite_check.returncode == 0:
+            raise RuntimeError("Split generation did not refuse overwrite by default")
 
     cache_path = output_dir / "fake_feature_cache.pt"
     cache = make_fake_feature_cache(seed=args.seed)
@@ -134,6 +225,8 @@ def main() -> None:
         "log_path": str(run.log_path),
         "written_split_count": len(written_splits),
         "feature_cache_path": str(cache_path),
+        "dataset_inspection_report_path": str(inspection_report_path),
+        "dataset_inspection_summary_path": str(inspection_summary_path),
     }
     prediction_path = write_prediction_csv(run.run_dir / "predictions.csv", loaded_cache, result.predictions)
     per_class_path = safe_write_csv(
@@ -177,7 +270,10 @@ def main() -> None:
     print(f"per_class_accuracy_path={per_class_path}")
     print(f"confusion_matrix_path={confusion_path}")
     print(f"feature_cache_path={cache_path}")
+    print(f"dataset_inspection_report_path={inspection_report_path}")
+    print(f"dataset_inspection_summary_path={inspection_summary_path}")
     print(f"split_dir={split_dir}")
+    print(f"split_path={split_path}")
     print(f"table_summary_path={table_summary_path}")
     for key, value in table_summary.get("outputs", {}).items():
         print(f"table_{key}_path={value}")

@@ -29,3 +29,9 @@ These outputs cannot be used in paper-facing result tables.
 If no eligible results exist, it writes empty CSV files with headers and a summary JSON. It must not fabricate rows.
 
 Paper-facing tables must be generated only from explicitly approved server runs.
+
+## Dataset Inspection and Split Generation
+
+Before any real feature extraction or baseline evaluation, inspect the dataset root with `scripts/inspect_dataset.py`. Critical failures include a missing root, no class-folder layout, empty classes, too few samples per class, or a known expected class count mismatch.
+
+Splits are generated with `scripts/generate_splits.py`. Generation is deterministic by seed and refuses overwrite by default. Use `--overwrite` only for intentional regeneration. Local smoke/tiny split files are marked `is_paper_result: false`; paper-facing splits must come from verified real dataset roots and be preserved.

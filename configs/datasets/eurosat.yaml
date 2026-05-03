@@ -2,10 +2,16 @@ dataset:
   name: eurosat
   display_name: EuroSAT
   root: null
+  output_split_root: splits/eurosat
   class_folder_candidates:
     - images
     - RGB
     - .
+  class_name_mapping: {}
+  expected_num_classes: 10
+  min_images_per_class: 1
+  ignore_hidden_files: true
+  follow_symlinks: false
   image_extensions:
     - .jpg
     - .jpeg
@@ -13,6 +19,7 @@ dataset:
     - .tif
     - .tiff
   split:
+    policy: class_stratified_random
     train_ratio: 0.6
     val_ratio: 0.2
     test_ratio: 0.2
