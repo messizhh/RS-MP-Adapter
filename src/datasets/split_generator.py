@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from random import Random
@@ -7,7 +10,6 @@ from typing import Iterable
 
 from src.datasets.base_dataset import DatasetDescriptor, DatasetSample, find_class_root, list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor
-from src.utils.io import write_json
 from src.utils.timing import utc_now_iso
 
 
@@ -119,6 +121,23 @@ def make_split_payload(
     }
 
 
+def write_split_json(path: str | Path, data: dict[str, object], overwrite: bool = False) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing file: {destination}")
+    fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+        os.replace(temp_name, destination)
+    except Exception:
+        Path(temp_name).unlink(missing_ok=True)
+        raise
+    return destination
+
+
 def generate_split_files(
     dataset: str,
     root: str | Path,
@@ -172,7 +191,7 @@ def generate_split_files(
         )
         base_path = output / f"base_split_seed{seed}.json"
         if not dry_run:
-            written.append(write_json(base_path, base_payload, overwrite=overwrite))
+            written.append(write_split_json(base_path, base_payload, overwrite=overwrite))
         else:
             written.append(base_path)
         for shot in shots:
@@ -198,7 +217,7 @@ def generate_split_files(
             )
             path = output / f"shot_{shot}_seed{seed}.json"
             if not dry_run:
-                written.append(write_json(path, payload, overwrite=overwrite))
+                written.append(write_split_json(path, payload, overwrite=overwrite))
             else:
                 written.append(path)
     return written

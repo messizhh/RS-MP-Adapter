@@ -169,6 +169,32 @@ class SplitGenerationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "sample path is not under path_root"):
                 portable_sample_path(str(sample_path), path_root)
 
+    def test_generate_split_files_write_compact_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "data"
+            output = Path(temp_dir) / "splits"
+            create_fake_class_dataset(root, samples_per_class=20)
+            descriptor = get_dataset_descriptor("eurosat", root=root).with_options(expected_num_classes=None)
+            generate_split_files(
+                dataset="eurosat",
+                root=root,
+                output_dir=output,
+                shots=[1],
+                seeds=[1],
+                descriptor=descriptor,
+                execution_env="local_wsl",
+                run_mode="smoke_test",
+            )
+            split_path = output / "shot_1_seed1.json"
+            text = split_path.read_text(encoding="utf-8")
+            self.assertTrue(text.endswith("\n"))
+            self.assertEqual(text.count("\n"), 1)
+            self.assertNotIn('\n  "', text)
+            split = read_json(split_path)
+            self.assertEqual(split["dataset"], "eurosat")
+            self.assertEqual(split["shot"], 1)
+            self.assertIn("support", split)
+
     def test_generate_splits_cli_dry_run_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "data"
