@@ -9,7 +9,7 @@ import sys
 
 from src.datasets.base_dataset import DatasetSample, list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor
-from src.datasets.split_generator import build_support_set, generate_split_files, make_split_payload, split_samples_by_class
+from src.datasets.split_generator import build_support_set, generate_split_files, make_split_payload, portable_sample_path, split_samples_by_class
 from src.utils.io import read_json, write_json
 from tests.helpers.fake_datasets import create_fake_class_dataset
 
@@ -126,6 +126,48 @@ class SplitGenerationTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 generate_split_files("eurosat", root, output, shots=[1], seeds=[1], descriptor=descriptor)
             generate_split_files("eurosat", root, output, shots=[1], seeds=[1], descriptor=descriptor, overwrite=True)
+
+    def test_generate_split_files_write_portable_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "data"
+            output = Path(temp_dir) / "splits"
+            create_fake_class_dataset(root, class_names=["AnnualCrop", "Forest", "River"], samples_per_class=20)
+            descriptor = get_dataset_descriptor("eurosat", root=root).with_options(expected_num_classes=None)
+            generate_split_files(
+                dataset="eurosat",
+                root=root,
+                output_dir=output,
+                shots=[1],
+                seeds=[1],
+                descriptor=descriptor,
+                execution_env="local_wsl",
+                run_mode="smoke_test",
+            )
+            split_path = output / "shot_1_seed1.json"
+            split = read_json(split_path)
+            self.assertEqual(split["dataset_root"], "")
+            for split_name in ["train", "val", "test", "support"]:
+                for sample in split[split_name]:
+                    sample_path = sample["path"]
+                    self.assertFalse(Path(sample_path).is_absolute())
+                    self.assertNotIn(str(root), sample_path)
+                    self.assertNotIn("/root/", sample_path)
+                    self.assertGreaterEqual(len(Path(sample_path).parts), 2)
+            payload_text = split_path.read_text(encoding="utf-8")
+            self.assertNotIn(str(root), payload_text)
+            self.assertNotIn("/root/", payload_text)
+
+    def test_portable_sample_path_raises_when_sample_is_outside_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path_root = Path(temp_dir) / "dataset"
+            other_root = Path(temp_dir) / "other"
+            path_root.mkdir()
+            other_root.mkdir()
+            sample_path = other_root / "AnnualCrop" / "sample.jpg"
+            sample_path.parent.mkdir()
+            sample_path.write_text("fake image placeholder\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "sample path is not under path_root"):
+                portable_sample_path(str(sample_path), path_root)
 
     def test_generate_splits_cli_dry_run_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

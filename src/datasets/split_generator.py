@@ -5,7 +5,7 @@ from pathlib import Path
 from random import Random
 from typing import Iterable
 
-from src.datasets.base_dataset import DatasetDescriptor, DatasetSample, list_class_folder_samples
+from src.datasets.base_dataset import DatasetDescriptor, DatasetSample, find_class_root, list_class_folder_samples
 from src.datasets.dataset_registry import get_dataset_descriptor
 from src.utils.io import write_json
 from src.utils.timing import utc_now_iso
@@ -15,8 +15,17 @@ DEFAULT_SHOTS = (1, 2, 4, 8, 16)
 DEFAULT_SEEDS = (1, 2, 3, 4, 5)
 
 
-def sample_to_dict(sample: DatasetSample) -> dict[str, object]:
-    return {"path": sample.path, "label": sample.label, "class_name": sample.class_name}
+def sample_to_dict(sample: DatasetSample, path_root: str | Path | None = None) -> dict[str, object]:
+    return {"path": portable_sample_path(sample.path, path_root), "label": sample.label, "class_name": sample.class_name}
+
+
+def portable_sample_path(path: str, path_root: str | Path | None = None) -> str:
+    if path_root is None:
+        return path
+    try:
+        return Path(path).resolve().relative_to(Path(path_root).resolve()).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"sample path is not under path_root: sample={path}, path_root={path_root}") from exc
 
 
 def split_samples_by_class(
@@ -82,15 +91,16 @@ def make_split_payload(
     execution_env: str = "local_wsl",
     run_mode: str = "smoke_test",
     is_paper_result: bool = False,
+    sample_path_root: str | Path | None = None,
 ) -> dict[str, object]:
     return {
         "dataset": dataset,
         "seed": seed,
         "shot": shot,
-        "train": [sample_to_dict(sample) for sample in train],
-        "val": [sample_to_dict(sample) for sample in val],
-        "test": [sample_to_dict(sample) for sample in test],
-        "support": [sample_to_dict(sample) for sample in support],
+        "train": [sample_to_dict(sample, sample_path_root) for sample in train],
+        "val": [sample_to_dict(sample, sample_path_root) for sample in val],
+        "test": [sample_to_dict(sample, sample_path_root) for sample in test],
+        "support": [sample_to_dict(sample, sample_path_root) for sample in support],
         "class_to_idx": class_to_idx,
         "created_at": utc_now_iso(),
         "source_script": source_script,
@@ -134,6 +144,7 @@ def generate_split_files(
         max_samples_per_class=max_samples_per_class,
         min_samples_per_class=min_samples_per_class,
     )
+    class_root = find_class_root(descriptor)
     output = Path(output_dir)
     written: list[Path] = []
     split_ratios = {"train": train_ratio, "val": val_ratio, "test": max(0.0, 1.0 - train_ratio - val_ratio)}
@@ -150,13 +161,14 @@ def generate_split_files(
             [],
             class_to_idx,
             source_script,
-            dataset_root=str(root),
+            dataset_root="",
             split_policy=split_policy,
             split_ratios=split_ratios,
             image_extensions=list(descriptor.image_extensions),
             execution_env=execution_env,
             run_mode=run_mode,
             is_paper_result=is_paper_result,
+            sample_path_root=class_root,
         )
         base_path = output / f"base_split_seed{seed}.json"
         if not dry_run:
@@ -175,13 +187,14 @@ def generate_split_files(
                 support,
                 class_to_idx,
                 source_script,
-                dataset_root=str(root),
+                dataset_root="",
                 split_policy=split_policy,
                 split_ratios=split_ratios,
                 image_extensions=list(descriptor.image_extensions),
                 execution_env=execution_env,
                 run_mode=run_mode,
                 is_paper_result=is_paper_result,
+                sample_path_root=class_root,
             )
             path = output / f"shot_{shot}_seed{seed}.json"
             if not dry_run:
