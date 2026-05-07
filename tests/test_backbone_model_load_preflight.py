@@ -115,7 +115,7 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             self.assertEqual(report["checkpoint_load_mode"], "state_dict")
             self.assertEqual(report["model_class"], "FakeOpenClipModel")
 
-    def test_fake_remoteclip_checkpoint_load_records_metadata(self) -> None:
+    def test_fake_remoteclip_checkpoint_mismatch_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
             weights_path = base / "remoteclip.pt"
@@ -145,10 +145,10 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
                 )
 
             report = read_json(report_path)
-            self.assertTrue(is_valid)
-            self.assertTrue(report["is_valid"])
-            self.assertTrue(report["loads_model"])
-            self.assertTrue(report["checkpoint_loaded"])
+            self.assertFalse(is_valid)
+            self.assertFalse(report["is_valid"])
+            self.assertFalse(report["loads_model"])
+            self.assertFalse(report["checkpoint_loaded"])
             self.assertEqual(report["checkpoint_num_tensors"], 2)
             self.assertEqual(report["checkpoint_load_mode"], "state_dict")
             self.assertEqual(report["missing_keys_count"], 1)
@@ -159,6 +159,58 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             self.assertEqual(report["torch_version"], "fake-torch")
             self.assertEqual(report["open_clip_version"], "fake-open-clip")
             self.assertFalse(report["cuda_available"])
+            self.assertIsNone(report["open_clip_initial_pretrained"])
+            self.assertTrue(report["open_clip_initialization_warning_expected"])
+            self.assertTrue(report["checkpoint_load_happened_after_model_init"])
+            self.assertFalse(report["final_weights_loaded_from_checkpoint"])
+            self.assertEqual(report["final_weight_source"], "cli_override_checkpoint")
+            self.assertEqual(report["final_checkpoint_load_status"], "invalid_key_mismatch")
+            self.assertIn("strictly match", " ".join(report["errors"]))
+
+    def test_fake_remoteclip_strict_checkpoint_load_records_expected_open_clip_warning_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            weights_path = base / "remoteclip.pt"
+            weights_path.write_bytes(b"placeholder\n")
+            config_path, output_dir = make_inputs(
+                base,
+                name="remoteclip_vit_b32",
+                family="remoteclip",
+                weights=None,
+                allow_download=False,
+            )
+            checkpoint = {"state_dict": {"module.visual.proj": FakeTensor(), "model.text_projection": FakeTensor()}}
+
+            with patched_remoteclip_modules(checkpoint=checkpoint) as recorder:
+                report_path, is_valid = run_backbone_model_load_preflight(
+                    backbone_config_path=config_path,
+                    expected_backbone="remoteclip_vit_b32",
+                    weights_path_override=str(weights_path),
+                    output_dir=output_dir,
+                    execution_env="local_wsl",
+                    run_mode="local_validation",
+                    device="cpu",
+                )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["is_valid"])
+            self.assertTrue(report["loads_model"])
+            self.assertTrue(report["checkpoint_loaded"])
+            self.assertEqual(report["missing_keys_count"], 0)
+            self.assertEqual(report["unexpected_keys_count"], 0)
+            self.assertIsNone(report["open_clip_initial_pretrained"])
+            self.assertEqual(recorder["pretrained"], None)
+            self.assertTrue(report["open_clip_initialization_warning_expected"])
+            self.assertTrue(report["checkpoint_load_happened_after_model_init"])
+            self.assertTrue(report["final_weights_loaded_from_checkpoint"])
+            self.assertEqual(report["final_weight_source"], "cli_override_checkpoint")
+            self.assertEqual(report["final_checkpoint_load_status"], "loaded_strictly_matching_keys")
+            self.assertFalse(report["trains_model"])
+            self.assertFalse(report["evaluates_model"])
+            self.assertFalse(report["saves_feature_cache"])
+            self.assertFalse(report["saves_predictions"])
+            self.assertFalse(report["saves_logits"])
 
     def test_fake_dry_run_load_preflight_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -303,16 +355,34 @@ def patched_remoteclip_modules(
     missing_keys: list[str] | None = None,
     unexpected_keys: list[str] | None = None,
 ):
+    recorder: dict[str, object] = {}
     fake_torch = SimpleNamespace(
         __version__="fake-torch",
         cuda=SimpleNamespace(is_available=lambda: False, get_device_name=lambda device: None),
         load=lambda path, map_location=None: checkpoint,
     )
+    def create_model(name, pretrained=None, device="cpu"):
+        recorder["model_name"] = name
+        recorder["pretrained"] = pretrained
+        recorder["device"] = device
+        return FakeOpenClipModel(missing_keys, unexpected_keys)
+
     fake_open_clip = SimpleNamespace(
         __version__="fake-open-clip",
-        create_model=lambda name, pretrained=None, device="cpu": FakeOpenClipModel(missing_keys, unexpected_keys),
+        create_model=create_model,
     )
-    return patch.dict(sys.modules, {"torch": fake_torch, "open_clip": fake_open_clip})
+    class RecorderContext:
+        def __init__(self) -> None:
+            self.patcher = patch.dict(sys.modules, {"torch": fake_torch, "open_clip": fake_open_clip})
+
+        def __enter__(self):
+            self.patcher.__enter__()
+            return recorder
+
+        def __exit__(self, exc_type, exc, tb):
+            return self.patcher.__exit__(exc_type, exc, tb)
+
+    return RecorderContext()
 
 
 if __name__ == "__main__":

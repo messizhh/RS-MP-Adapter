@@ -115,6 +115,7 @@ def run_backbone_model_load_preflight(
         errors.append("model object was created but no local checkpoint was confirmed as loaded")
 
     is_valid = not errors
+    load_report_fields = checkpoint_report_fields(load_metadata, weights_source)
     report = {
         "backbone_config_path": str(config_path),
         "backbone": name,
@@ -144,6 +145,7 @@ def run_backbone_model_load_preflight(
         "missing_keys_sample": load_metadata["missing_keys_sample"],
         "unexpected_keys_sample": load_metadata["unexpected_keys_sample"],
         "model_class": load_metadata["model_class"],
+        **load_report_fields,
         "torch_version": runtime_metadata["torch_version"],
         "open_clip_version": runtime_metadata["open_clip_version"],
         "cuda_available": runtime_metadata["cuda_available"],
@@ -154,6 +156,8 @@ def run_backbone_model_load_preflight(
         "evaluates_model": False,
         "downloads_weights": False,
         "saves_feature_cache": False,
+        "saves_predictions": False,
+        "saves_logits": False,
         "is_valid": is_valid,
         "errors": errors,
         "warnings": warnings,
@@ -188,6 +192,12 @@ def default_load_metadata() -> dict[str, Any]:
         "missing_keys_sample": [],
         "unexpected_keys_sample": [],
         "model_class": None,
+        "open_clip_initial_pretrained": None,
+        "open_clip_initialization_warning_expected": False,
+        "checkpoint_load_happened_after_model_init": False,
+        "final_weights_loaded_from_checkpoint": False,
+        "final_weight_source": None,
+        "final_checkpoint_load_status": "not_attempted",
     }
 
 
@@ -202,6 +212,24 @@ def metadata_from_model(model: Any, dry_run: bool) -> dict[str, Any]:
     else:
         metadata["model_class"] = model.__class__.__name__
     return metadata
+
+
+def checkpoint_report_fields(load_metadata: dict[str, Any], weights_source: str) -> dict[str, Any]:
+    fields = {
+        "open_clip_initial_pretrained": load_metadata.get("open_clip_initial_pretrained"),
+        "open_clip_initialization_warning_expected": bool(
+            load_metadata.get("open_clip_initialization_warning_expected", False)
+        ),
+        "checkpoint_load_happened_after_model_init": bool(
+            load_metadata.get("checkpoint_load_happened_after_model_init", False)
+        ),
+        "final_weights_loaded_from_checkpoint": bool(load_metadata.get("final_weights_loaded_from_checkpoint", False)),
+        "final_weight_source": load_metadata.get("final_weight_source"),
+        "final_checkpoint_load_status": load_metadata.get("final_checkpoint_load_status", "not_attempted"),
+    }
+    if weights_source != "none" and fields["checkpoint_load_happened_after_model_init"]:
+        fields["final_weight_source"] = f"{weights_source}_checkpoint"
+    return fields
 
 
 def metadata_from_exception(exc: BaseException) -> dict[str, Any]:

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.check_backbone_config_preflight import first_configured_path, normalize_weight_path
 from scripts.check_backbone_model_load_preflight import (
+    checkpoint_report_fields,
     collect_runtime_metadata,
     default_load_metadata,
     metadata_from_exception,
@@ -161,6 +162,7 @@ def run_backbone_feature_preflight(
             errors.append(f"image feature preflight failed: {exc}")
 
     is_valid = not errors
+    load_report_fields = checkpoint_report_fields(load_metadata, "cli_override")
     report = {
         "backbone_config_path": str(config_path),
         "backbone": name,
@@ -197,6 +199,7 @@ def run_backbone_feature_preflight(
         "missing_keys_sample": load_metadata["missing_keys_sample"],
         "unexpected_keys_sample": load_metadata["unexpected_keys_sample"],
         "model_class": load_metadata["model_class"],
+        **load_report_fields,
         "torch_version": runtime_metadata["torch_version"],
         "open_clip_version": runtime_metadata["open_clip_version"],
         "cuda_available": runtime_metadata["cuda_available"],
@@ -209,6 +212,7 @@ def run_backbone_feature_preflight(
         "downloads_weights": False,
         "saves_feature_cache": False,
         "saves_predictions": False,
+        "saves_logits": False,
         "is_valid": is_valid,
         "errors": errors,
         "warnings": warnings,

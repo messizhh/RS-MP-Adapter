@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,12 @@ class RemoteClipBackbone(BaseBackbone):
             "missing_keys_sample": [],
             "unexpected_keys_sample": [],
             "model_class": None,
+            "open_clip_initial_pretrained": None,
+            "open_clip_initialization_warning_expected": False,
+            "checkpoint_load_happened_after_model_init": False,
+            "final_weights_loaded_from_checkpoint": False,
+            "final_weight_source": None,
+            "final_checkpoint_load_status": "not_attempted",
         }
 
     def load_model(self) -> "RemoteClipBackbone":
@@ -49,26 +56,44 @@ class RemoteClipBackbone(BaseBackbone):
         if self.config.device.startswith("cuda") and not torch.cuda.is_available():
             raise BackboneUnavailableError(f"CUDA device requested but unavailable: {self.config.device}")
 
+        logging.warning(
+            "RemoteCLIP: open_clip model is initialized before loading local checkpoint; "
+            'the open_clip "No pretrained weights loaded" warning is expected when pretrained=None.'
+        )
         model = open_clip.create_model("ViT-B-32", pretrained=None, device=self.config.device)
+        logging.warning("RemoteCLIP: checkpoint load result follows after local checkpoint is read.")
         checkpoint = torch.load(weights_path, map_location=self.config.device)
         state_dict, load_mode = checkpoint_state_dict(checkpoint)
         cleaned_state_dict = strip_state_dict_prefixes(state_dict)
         checkpoint_num_tensors = count_tensor_like_values(cleaned_state_dict)
+        base_load_metadata = {
+            **self.load_metadata,
+            "open_clip_initial_pretrained": None,
+            "open_clip_initialization_warning_expected": True,
+            "checkpoint_load_happened_after_model_init": True,
+            "final_weights_loaded_from_checkpoint": False,
+            "final_weight_source": "local_checkpoint",
+            "model_class": model.__class__.__name__,
+        }
         if checkpoint_num_tensors == 0:
             raise_with_metadata(
                 "RemoteCLIP checkpoint contains zero tensor-like entries.",
                 {
-                    **self.load_metadata,
+                    **base_load_metadata,
                     "checkpoint_load_mode": load_mode,
                     "checkpoint_num_tensors": 0,
-                    "model_class": model.__class__.__name__,
+                    "final_checkpoint_load_status": "not_loaded_empty_checkpoint",
                 },
             )
         load_result = model.load_state_dict(cleaned_state_dict, strict=False)
         missing_keys = list(getattr(load_result, "missing_keys", []))
         unexpected_keys = list(getattr(load_result, "unexpected_keys", []))
-        checkpoint_loaded = checkpoint_num_tensors > 0 and len(unexpected_keys) < checkpoint_num_tensors
+        checkpoint_loaded = checkpoint_num_tensors > 0 and not missing_keys and not unexpected_keys
+        final_checkpoint_load_status = (
+            "loaded_strictly_matching_keys" if checkpoint_loaded else "invalid_key_mismatch"
+        )
         load_metadata = {
+            **base_load_metadata,
             "checkpoint_loaded": checkpoint_loaded,
             "checkpoint_num_tensors": checkpoint_num_tensors,
             "checkpoint_load_mode": load_mode,
@@ -76,13 +101,21 @@ class RemoteClipBackbone(BaseBackbone):
             "unexpected_keys_count": len(unexpected_keys),
             "missing_keys_sample": missing_keys[:10],
             "unexpected_keys_sample": unexpected_keys[:10],
-            "model_class": model.__class__.__name__,
+            "final_weights_loaded_from_checkpoint": checkpoint_loaded,
+            "final_checkpoint_load_status": final_checkpoint_load_status,
         }
         if not checkpoint_loaded:
             raise_with_metadata(
-                "RemoteCLIP checkpoint did not load into the model; all checkpoint tensors were unexpected.",
+                "RemoteCLIP checkpoint did not strictly match the model keys; refusing to continue with partial or ambiguous weights.",
                 load_metadata,
             )
+        logging.warning(
+            "RemoteCLIP: checkpoint load status=%s tensors=%s missing_keys=%s unexpected_keys=%s",
+            final_checkpoint_load_status,
+            checkpoint_num_tensors,
+            len(missing_keys),
+            len(unexpected_keys),
+        )
         model.eval()
         self.model = model
         self.is_loaded = True

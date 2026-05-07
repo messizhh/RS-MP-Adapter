@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.check_backbone_config_preflight import first_configured_path, normalize_weight_path
 from scripts.check_backbone_feature_preflight import image_size_from_backbone, pil_to_clip_tensor
 from scripts.check_backbone_model_load_preflight import (
+    checkpoint_report_fields,
     collect_runtime_metadata,
     default_load_metadata,
     metadata_from_exception,
@@ -224,6 +225,7 @@ def run_tiny_real_feature_extraction(
         except Exception as exc:
             errors.append(f"tiny real feature extraction failed: {exc}")
 
+    load_report_fields = checkpoint_report_fields(load_metadata, "cli_override")
     metadata = {
         "execution_env": execution_env,
         "run_mode": run_mode,
@@ -237,6 +239,7 @@ def run_tiny_real_feature_extraction(
         "image_list_path": str(image_list_path) if image_list_path else None,
         "weights_source": "cli_override",
         "checkpoint_loaded": load_metadata["checkpoint_loaded"],
+        **load_report_fields,
         "feature_shape": feature_shape,
         "feature_norm_stats": feature_norm_stats,
         "command": command or "",
@@ -246,6 +249,7 @@ def run_tiny_real_feature_extraction(
         "is_full_feature_extraction": False,
         "extracts_text_features": False,
         "saves_predictions": False,
+        "saves_logits": False,
         "trains_model": False,
         "evaluates_model": False,
         "downloads_weights": False,
@@ -312,6 +316,7 @@ def run_tiny_real_feature_extraction(
         "missing_keys_sample": load_metadata["missing_keys_sample"],
         "unexpected_keys_sample": load_metadata["unexpected_keys_sample"],
         "model_class": load_metadata["model_class"],
+        **load_report_fields,
         "torch_version": runtime_metadata["torch_version"],
         "open_clip_version": runtime_metadata["open_clip_version"],
         "cuda_available": runtime_metadata["cuda_available"],

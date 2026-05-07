@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.check_backbone_config_preflight import first_configured_path, normalize_weight_path
 from scripts.check_backbone_feature_preflight import image_size_from_backbone, pil_to_clip_tensor
 from scripts.check_backbone_model_load_preflight import (
+    checkpoint_report_fields,
     collect_runtime_metadata,
     default_load_metadata,
     metadata_from_exception,
@@ -192,6 +193,8 @@ def run_feature_cache_real_preflight(
         except Exception as exc:
             errors.append(f"tiny feature-cache preflight failed: {exc}")
 
+    load_report_fields = checkpoint_report_fields(load_metadata, "cli_override")
+
     if not errors and features is not None:
         try:
             run_dir = unique_dir(output_root / str(name or expected_backbone) / "feature_cache_real_preflight")
@@ -221,9 +224,12 @@ def run_feature_cache_real_preflight(
                     "run_mode": run_mode,
                     "loads_model": loads_model,
                     "checkpoint_loaded": load_metadata["checkpoint_loaded"],
+                    **load_report_fields,
                     "reads_image_pixels": reads_image_pixels,
                     "extracts_features": extracts_features,
                     "extracts_text_features": False,
+                    "saves_predictions": False,
+                    "saves_logits": False,
                     "trains_model": False,
                     "evaluates_model": False,
                     "downloads_weights": False,
@@ -279,6 +285,7 @@ def run_feature_cache_real_preflight(
         "missing_keys_sample": load_metadata["missing_keys_sample"],
         "unexpected_keys_sample": load_metadata["unexpected_keys_sample"],
         "model_class": load_metadata["model_class"],
+        **load_report_fields,
         "torch_version": runtime_metadata["torch_version"],
         "open_clip_version": runtime_metadata["open_clip_version"],
         "cuda_available": runtime_metadata["cuda_available"],
@@ -291,6 +298,7 @@ def run_feature_cache_real_preflight(
         "downloads_weights": False,
         "saves_feature_cache": saves_feature_cache,
         "saves_predictions": False,
+        "saves_logits": False,
         "is_valid": is_valid,
         "errors": errors,
         "warnings": warnings,

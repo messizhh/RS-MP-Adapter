@@ -70,6 +70,7 @@ class TinyRealFeatureExtractionTest(unittest.TestCase):
             self.assertTrue(report["extracts_features"])
             self.assertFalse(report["extracts_text_features"])
             self.assertFalse(report["saves_predictions"])
+            self.assertFalse(report["saves_logits"])
             self.assertFalse(report["trains_model"])
             self.assertFalse(report["evaluates_model"])
             self.assertEqual(report["image_count"], 2)
@@ -77,6 +78,12 @@ class TinyRealFeatureExtractionTest(unittest.TestCase):
             self.assertEqual(report["split_path"], str(split_path))
             self.assertIsNone(report["image_list_path"])
             self.assertEqual(report["weights_source"], "cli_override")
+            self.assertIsNone(report["open_clip_initial_pretrained"])
+            self.assertTrue(report["open_clip_initialization_warning_expected"])
+            self.assertTrue(report["checkpoint_load_happened_after_model_init"])
+            self.assertTrue(report["final_weights_loaded_from_checkpoint"])
+            self.assertEqual(report["final_weight_source"], "cli_override_checkpoint")
+            self.assertEqual(report["final_checkpoint_load_status"], "loaded_strictly_matching_keys")
             self.assertEqual(report["feature_shape"], [2, 512])
             self.assertNotIn("outputs/features/", report["feature_cache_path"])
 
@@ -97,6 +104,8 @@ class TinyRealFeatureExtractionTest(unittest.TestCase):
                 "split_path",
                 "weights_source",
                 "checkpoint_loaded",
+                "final_weights_loaded_from_checkpoint",
+                "final_checkpoint_load_status",
                 "feature_shape",
                 "feature_norm_stats",
                 "command",

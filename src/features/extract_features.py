@@ -221,6 +221,7 @@ def run_guarded_real_feature_extraction(
     is_limited_real_extraction = requested_max_samples is not None
     is_full_split_extraction = not is_limited_real_extraction
     effective_paper_candidate = bool(is_paper_result_candidate) and is_full_split_extraction
+    load_report_fields = checkpoint_report_fields(load_metadata, "cli_override")
     metadata = {
         "git_commit": git_commit(),
         "command": command or shell_join(sys.argv),
@@ -243,6 +244,7 @@ def run_guarded_real_feature_extraction(
         "feature_norm_stats": feature_norm_stats,
         "weights_source": "cli_override",
         "checkpoint_loaded": checkpoint_loaded,
+        **load_report_fields,
         "start_time": start_time,
         "end_time": end_time,
         "device": device,
@@ -426,6 +428,24 @@ def collect_runtime_metadata(device: str) -> dict[str, Any]:
         "cuda_available": cuda_available,
         "cuda_device_name": cuda_device_name,
     }
+
+
+def checkpoint_report_fields(load_metadata: dict[str, Any], weights_source: str) -> dict[str, Any]:
+    fields = {
+        "open_clip_initial_pretrained": load_metadata.get("open_clip_initial_pretrained"),
+        "open_clip_initialization_warning_expected": bool(
+            load_metadata.get("open_clip_initialization_warning_expected", False)
+        ),
+        "checkpoint_load_happened_after_model_init": bool(
+            load_metadata.get("checkpoint_load_happened_after_model_init", False)
+        ),
+        "final_weights_loaded_from_checkpoint": bool(load_metadata.get("final_weights_loaded_from_checkpoint", False)),
+        "final_weight_source": load_metadata.get("final_weight_source"),
+        "final_checkpoint_load_status": load_metadata.get("final_checkpoint_load_status", "not_attempted"),
+    }
+    if weights_source != "none" and fields["checkpoint_load_happened_after_model_init"]:
+        fields["final_weight_source"] = f"{weights_source}_checkpoint"
+    return fields
 
 
 def shell_join(argv: list[str]) -> str:
