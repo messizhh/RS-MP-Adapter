@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution-env", default="local_wsl")
     parser.add_argument("--run-mode", default="local_validation")
     parser.add_argument("--require-weights", action="store_true")
+    parser.add_argument("--weights-path", default=None)
+    parser.add_argument("--env-config", default=None)
     return parser.parse_args()
 
 
@@ -33,6 +35,8 @@ def main() -> None:
         execution_env=args.execution_env,
         run_mode=args.run_mode,
         require_weights=args.require_weights,
+        weights_path_override=args.weights_path,
+        env_config_path=args.env_config,
         source_script="scripts/check_backbone_config_preflight.py",
     )
     print(f"backbone_config_report_path={report_path}")
@@ -48,7 +52,9 @@ def run_backbone_config_preflight(
     execution_env: str,
     run_mode: str,
     require_weights: bool,
-    source_script: str,
+    weights_path_override: str | None = None,
+    env_config_path: str | Path | None = None,
+    source_script: str = "scripts/check_backbone_config_preflight.py",
 ) -> tuple[Path, bool]:
     config_path = Path(backbone_config_path)
     config = load_yaml_config(config_path)
@@ -67,10 +73,18 @@ def run_backbone_config_preflight(
     allow_download = backbone.get("allow_download")
     normalize_features = backbone.get("normalize_features")
     preprocess = backbone.get("preprocess", {})
-    weights_value = first_configured_path(backbone)
-    weights_path = normalize_weight_path(config_path, weights_value)
-    weights_configured = weights_path is not None
-    weights_exists = weights_path.exists() if weights_path is not None else False
+    original_weights_value = first_configured_path(backbone)
+    original_weights_path = normalize_weight_path(config_path, original_weights_value)
+    resolved_weights_path, weights_source = resolve_weight_path(
+        expected_backbone=expected_backbone,
+        config_path=config_path,
+        original_weights_value=original_weights_value,
+        weights_path_override=weights_path_override,
+        env_config_path=Path(env_config_path) if env_config_path else None,
+    )
+    weights_configured = resolved_weights_path is not None
+    weights_exists = resolved_weights_path.exists() if resolved_weights_path is not None else False
+    override_used = weights_source in {"cli_override", "env_config"}
 
     if name != expected_backbone:
         errors.append(f"backbone name mismatch: expected {expected_backbone}, found {name}")
@@ -79,7 +93,7 @@ def run_backbone_config_preflight(
     if require_weights and not weights_configured:
         errors.append("weights or pretrained_path is required but not configured")
     if weights_configured and not weights_exists:
-        errors.append(f"configured weights path does not exist: {weights_path}")
+        errors.append(f"configured weights path does not exist: {resolved_weights_path}")
     if not weights_configured:
         warnings.append("weights are not configured; config is not ready for real model loading")
 
@@ -91,7 +105,12 @@ def run_backbone_config_preflight(
         "family": family,
         "feature_dim": feature_dim,
         "image_size": image_size,
-        "weights_path": str(weights_path) if weights_path is not None else None,
+        "weights_path": str(resolved_weights_path) if resolved_weights_path is not None else None,
+        "weights_source": weights_source,
+        "original_weights_path": str(original_weights_path) if original_weights_path is not None else None,
+        "resolved_weights_path": str(resolved_weights_path) if resolved_weights_path is not None else None,
+        "env_config_path": str(env_config_path) if env_config_path is not None else None,
+        "override_used": override_used,
         "weights_configured": weights_configured,
         "weights_exists": weights_exists,
         "allow_download": allow_download,
@@ -122,6 +141,41 @@ def first_configured_path(backbone: dict[str, Any]) -> str | None:
         value = backbone.get(key)
         if isinstance(value, str) and value:
             return value
+    return None
+
+
+def resolve_weight_path(
+    *,
+    expected_backbone: str,
+    config_path: Path,
+    original_weights_value: str | None,
+    weights_path_override: str | None,
+    env_config_path: Path | None,
+) -> tuple[Path | None, str]:
+    if weights_path_override:
+        return normalize_weight_path(Path.cwd() / "cli_override.yaml", weights_path_override), "cli_override"
+
+    env_weights_value = env_config_weight_path(env_config_path, expected_backbone) if env_config_path is not None else None
+    if env_weights_value:
+        return normalize_weight_path(env_config_path, env_weights_value), "env_config"
+
+    if original_weights_value:
+        return normalize_weight_path(config_path, original_weights_value), "backbone_config"
+    return None, "none"
+
+
+def env_config_weight_path(env_config_path: Path, expected_backbone: str) -> str | None:
+    config = load_yaml_config(env_config_path)
+    candidates = []
+    paths = config.get("paths", {})
+    if isinstance(paths, dict):
+        candidates.append(paths.get("backbone_weights"))
+    candidates.append(config.get("backbone_weights"))
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            value = candidate.get(expected_backbone)
+            if isinstance(value, str) and value:
+                return value
     return None
 
 
