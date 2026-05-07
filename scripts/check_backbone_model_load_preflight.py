@@ -66,6 +66,8 @@ def run_backbone_model_load_preflight(
     errors: list[str] = []
     warnings: list[str] = []
     loads_model = False
+    load_metadata = default_load_metadata()
+    runtime_metadata = collect_runtime_metadata(device)
 
     if not isinstance(backbone, dict):
         backbone = {}
@@ -102,10 +104,15 @@ def run_backbone_model_load_preflight(
             model = create_backbone(expected_backbone, effective_config, dry_run=dry_run, device=device)
             model.load_model().eval()
             loads_model = True
+            load_metadata = metadata_from_model(model, dry_run=dry_run)
         except BackboneUnavailableError as exc:
             errors.append(str(exc))
+            load_metadata = metadata_from_exception(exc)
         except Exception as exc:
             errors.append(f"model load failed: {exc}")
+
+    if not errors and not dry_run and family != "fake" and not load_metadata["checkpoint_loaded"]:
+        errors.append("model object was created but no local checkpoint was confirmed as loaded")
 
     is_valid = not errors
     report = {
@@ -129,6 +136,18 @@ def run_backbone_model_load_preflight(
         "run_mode": run_mode,
         "is_paper_result": False,
         "loads_model": loads_model,
+        "checkpoint_loaded": load_metadata["checkpoint_loaded"],
+        "checkpoint_num_tensors": load_metadata["checkpoint_num_tensors"],
+        "checkpoint_load_mode": load_metadata["checkpoint_load_mode"],
+        "missing_keys_count": load_metadata["missing_keys_count"],
+        "unexpected_keys_count": load_metadata["unexpected_keys_count"],
+        "missing_keys_sample": load_metadata["missing_keys_sample"],
+        "unexpected_keys_sample": load_metadata["unexpected_keys_sample"],
+        "model_class": load_metadata["model_class"],
+        "torch_version": runtime_metadata["torch_version"],
+        "open_clip_version": runtime_metadata["open_clip_version"],
+        "cuda_available": runtime_metadata["cuda_available"],
+        "cuda_device_name": runtime_metadata["cuda_device_name"],
         "extracts_features": False,
         "reads_image_pixels": False,
         "trains_model": False,
@@ -157,6 +176,68 @@ def resolve_model_load_weight_path(
     if original_weights_value:
         return normalize_weight_path(config_path, original_weights_value), "backbone_config"
     return None, "none"
+
+
+def default_load_metadata() -> dict[str, Any]:
+    return {
+        "checkpoint_loaded": False,
+        "checkpoint_num_tensors": 0,
+        "checkpoint_load_mode": "not_attempted",
+        "missing_keys_count": 0,
+        "unexpected_keys_count": 0,
+        "missing_keys_sample": [],
+        "unexpected_keys_sample": [],
+        "model_class": None,
+    }
+
+
+def metadata_from_model(model: Any, dry_run: bool) -> dict[str, Any]:
+    metadata = default_load_metadata()
+    model_metadata = getattr(model, "load_metadata", None)
+    if isinstance(model_metadata, dict):
+        metadata.update(model_metadata)
+    elif dry_run:
+        metadata["checkpoint_load_mode"] = "dry_run"
+        metadata["model_class"] = model.__class__.__name__
+    else:
+        metadata["model_class"] = model.__class__.__name__
+    return metadata
+
+
+def metadata_from_exception(exc: BaseException) -> dict[str, Any]:
+    metadata = default_load_metadata()
+    exc_metadata = getattr(exc, "load_metadata", None)
+    if isinstance(exc_metadata, dict):
+        metadata.update(exc_metadata)
+    return metadata
+
+
+def collect_runtime_metadata(device: str) -> dict[str, Any]:
+    torch_version = None
+    open_clip_version = None
+    cuda_available = False
+    cuda_device_name = None
+    try:
+        import torch
+
+        torch_version = getattr(torch, "__version__", None)
+        cuda_available = bool(torch.cuda.is_available())
+        if cuda_available and device.startswith("cuda"):
+            cuda_device_name = torch.cuda.get_device_name(device)
+    except Exception:
+        pass
+    try:
+        import open_clip
+
+        open_clip_version = getattr(open_clip, "__version__", "unknown")
+    except Exception:
+        pass
+    return {
+        "torch_version": torch_version,
+        "open_clip_version": open_clip_version,
+        "cuda_available": cuda_available,
+        "cuda_device_name": cuda_device_name,
+    }
 
 
 def unique_dir(base: Path) -> Path:

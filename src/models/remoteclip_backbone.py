@@ -10,11 +10,26 @@ class RemoteClipBackbone(BaseBackbone):
     def __init__(self, config: BackboneConfig) -> None:
         super().__init__(config)
         self.model: Any | None = None
+        self.load_metadata: dict[str, Any] = {
+            "checkpoint_loaded": False,
+            "checkpoint_num_tensors": 0,
+            "checkpoint_load_mode": "not_attempted",
+            "missing_keys_count": 0,
+            "unexpected_keys_count": 0,
+            "missing_keys_sample": [],
+            "unexpected_keys_sample": [],
+            "model_class": None,
+        }
 
     def load_model(self) -> "RemoteClipBackbone":
         if self.config.dry_run:
             self.is_loaded = True
             self.is_eval = True
+            self.load_metadata = {
+                **self.load_metadata,
+                "checkpoint_load_mode": "dry_run",
+                "model_class": self.__class__.__name__,
+            }
             return self
         if not self.config.weights:
             raise BackboneUnavailableError(
@@ -36,26 +51,53 @@ class RemoteClipBackbone(BaseBackbone):
 
         model = open_clip.create_model("ViT-B-32", pretrained=None, device=self.config.device)
         checkpoint = torch.load(weights_path, map_location=self.config.device)
-        state_dict = checkpoint_state_dict(checkpoint)
-        load_result = model.load_state_dict(strip_state_dict_prefixes(state_dict), strict=False)
+        state_dict, load_mode = checkpoint_state_dict(checkpoint)
+        cleaned_state_dict = strip_state_dict_prefixes(state_dict)
+        checkpoint_num_tensors = count_tensor_like_values(cleaned_state_dict)
+        if checkpoint_num_tensors == 0:
+            raise_with_metadata(
+                "RemoteCLIP checkpoint contains zero tensor-like entries.",
+                {
+                    **self.load_metadata,
+                    "checkpoint_load_mode": load_mode,
+                    "checkpoint_num_tensors": 0,
+                    "model_class": model.__class__.__name__,
+                },
+            )
+        load_result = model.load_state_dict(cleaned_state_dict, strict=False)
+        missing_keys = list(getattr(load_result, "missing_keys", []))
+        unexpected_keys = list(getattr(load_result, "unexpected_keys", []))
+        checkpoint_loaded = checkpoint_num_tensors > 0 and len(unexpected_keys) < checkpoint_num_tensors
+        load_metadata = {
+            "checkpoint_loaded": checkpoint_loaded,
+            "checkpoint_num_tensors": checkpoint_num_tensors,
+            "checkpoint_load_mode": load_mode,
+            "missing_keys_count": len(missing_keys),
+            "unexpected_keys_count": len(unexpected_keys),
+            "missing_keys_sample": missing_keys[:10],
+            "unexpected_keys_sample": unexpected_keys[:10],
+            "model_class": model.__class__.__name__,
+        }
+        if not checkpoint_loaded:
+            raise_with_metadata(
+                "RemoteCLIP checkpoint did not load into the model; all checkpoint tensors were unexpected.",
+                load_metadata,
+            )
         model.eval()
         self.model = model
         self.is_loaded = True
         self.is_eval = True
-        self.load_result = {
-            "missing_keys": list(getattr(load_result, "missing_keys", [])),
-            "unexpected_keys": list(getattr(load_result, "unexpected_keys", [])),
-        }
+        self.load_metadata = load_metadata
         return self
 
 
-def checkpoint_state_dict(checkpoint: Any) -> dict[str, Any]:
+def checkpoint_state_dict(checkpoint: Any) -> tuple[dict[str, Any], str]:
     if isinstance(checkpoint, dict):
-        for key in ("state_dict", "model", "module"):
+        for key in ("state_dict", "model"):
             value = checkpoint.get(key)
             if isinstance(value, dict):
-                return value
-        return checkpoint
+                return value, key
+        return checkpoint, "direct_state_dict"
     raise BackboneUnavailableError("RemoteCLIP checkpoint is not a state dict or checkpoint mapping.")
 
 
@@ -68,3 +110,17 @@ def strip_state_dict_prefixes(state_dict: dict[str, Any]) -> dict[str, Any]:
                 new_key = new_key[len(prefix) :]
         cleaned[new_key] = value
     return cleaned
+
+
+def count_tensor_like_values(state_dict: dict[str, Any]) -> int:
+    count = 0
+    for value in state_dict.values():
+        if hasattr(value, "shape") or hasattr(value, "numel"):
+            count += 1
+    return count
+
+
+def raise_with_metadata(message: str, metadata: dict[str, Any]) -> None:
+    error = BackboneUnavailableError(message)
+    error.load_metadata = metadata
+    raise error

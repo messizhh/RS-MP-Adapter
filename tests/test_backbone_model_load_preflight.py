@@ -5,8 +5,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
+from scripts.check_backbone_model_load_preflight import run_backbone_model_load_preflight
 from src.utils.io import read_json
 
 
@@ -27,6 +30,9 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             report = read_json(extract_path(completed.stdout))
             self.assertFalse(report["is_valid"])
             self.assertFalse(report["loads_model"])
+            self.assertFalse(report["checkpoint_loaded"])
+            self.assertEqual(report["checkpoint_num_tensors"], 0)
+            self.assertIn("checkpoint_loaded", report)
             self.assertEqual(report["weights_source"], "none")
             self.assertIn("requires a resolved local weights path", report["errors"][0])
 
@@ -53,6 +59,7 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             report = read_json(extract_path(completed.stdout))
             self.assertFalse(report["is_valid"])
             self.assertFalse(report["loads_model"])
+            self.assertFalse(report["checkpoint_loaded"])
             self.assertEqual(report["weights_source"], "cli_override")
             self.assertIn("does not exist", report["errors"][0])
 
@@ -72,7 +79,86 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             report = read_json(extract_path(completed.stdout))
             self.assertFalse(report["is_valid"])
             self.assertFalse(report["loads_model"])
+            self.assertFalse(report["checkpoint_loaded"])
             self.assertIn("allow_download", report["errors"][0])
+
+    def test_random_init_without_checkpoint_load_is_not_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            weights_path = base / "remoteclip.pt"
+            weights_path.write_bytes(b"placeholder\n")
+            config_path, output_dir = make_inputs(
+                base,
+                name="remoteclip_vit_b32",
+                family="remoteclip",
+                weights=None,
+                allow_download=False,
+            )
+
+            with patched_remoteclip_modules(checkpoint={"state_dict": {}}):
+                report_path, is_valid = run_backbone_model_load_preflight(
+                    backbone_config_path=config_path,
+                    expected_backbone="remoteclip_vit_b32",
+                    weights_path_override=str(weights_path),
+                    output_dir=output_dir,
+                    execution_env="local_wsl",
+                    run_mode="local_validation",
+                    device="cpu",
+                )
+
+            report = read_json(report_path)
+            self.assertFalse(is_valid)
+            self.assertFalse(report["is_valid"])
+            self.assertFalse(report["checkpoint_loaded"])
+            self.assertEqual(report["checkpoint_num_tensors"], 0)
+            self.assertFalse(report["loads_model"])
+            self.assertEqual(report["checkpoint_load_mode"], "state_dict")
+            self.assertEqual(report["model_class"], "FakeOpenClipModel")
+
+    def test_fake_remoteclip_checkpoint_load_records_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            weights_path = base / "remoteclip.pt"
+            weights_path.write_bytes(b"placeholder\n")
+            config_path, output_dir = make_inputs(
+                base,
+                name="remoteclip_vit_b32",
+                family="remoteclip",
+                weights=None,
+                allow_download=False,
+            )
+            checkpoint = {"state_dict": {"module.visual.proj": FakeTensor(), "model.text_projection": FakeTensor()}}
+
+            with patched_remoteclip_modules(
+                checkpoint=checkpoint,
+                missing_keys=["visual.conv1.weight"],
+                unexpected_keys=["unused.extra"],
+            ):
+                report_path, is_valid = run_backbone_model_load_preflight(
+                    backbone_config_path=config_path,
+                    expected_backbone="remoteclip_vit_b32",
+                    weights_path_override=str(weights_path),
+                    output_dir=output_dir,
+                    execution_env="local_wsl",
+                    run_mode="local_validation",
+                    device="cpu",
+                )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["is_valid"])
+            self.assertTrue(report["loads_model"])
+            self.assertTrue(report["checkpoint_loaded"])
+            self.assertEqual(report["checkpoint_num_tensors"], 2)
+            self.assertEqual(report["checkpoint_load_mode"], "state_dict")
+            self.assertEqual(report["missing_keys_count"], 1)
+            self.assertEqual(report["unexpected_keys_count"], 1)
+            self.assertEqual(report["missing_keys_sample"], ["visual.conv1.weight"])
+            self.assertEqual(report["unexpected_keys_sample"], ["unused.extra"])
+            self.assertEqual(report["model_class"], "FakeOpenClipModel")
+            self.assertEqual(report["torch_version"], "fake-torch")
+            self.assertEqual(report["open_clip_version"], "fake-open-clip")
+            self.assertFalse(report["cuda_available"])
 
     def test_fake_dry_run_load_preflight_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -89,6 +175,16 @@ class BackboneModelLoadPreflightTest(unittest.TestCase):
             report = read_json(extract_path(completed.stdout))
             self.assertTrue(report["is_valid"])
             self.assertTrue(report["loads_model"])
+            self.assertFalse(report["checkpoint_loaded"])
+            self.assertIn("checkpoint_num_tensors", report)
+            self.assertIn("checkpoint_load_mode", report)
+            self.assertIn("missing_keys_count", report)
+            self.assertIn("unexpected_keys_count", report)
+            self.assertIn("model_class", report)
+            self.assertIn("torch_version", report)
+            self.assertIn("open_clip_version", report)
+            self.assertIn("cuda_available", report)
+            self.assertIn("cuda_device_name", report)
             self.assertFalse(report["extracts_features"])
             self.assertFalse(report["reads_image_pixels"])
             self.assertFalse(report["trains_model"])
@@ -181,6 +277,42 @@ def extract_path(stdout: str) -> Path:
         if line.startswith("backbone_model_load_report_path="):
             return Path(line.split("=", 1)[1])
     raise AssertionError(f"Missing backbone_model_load_report_path in stdout: {stdout}")
+
+
+class FakeTensor:
+    shape = (1,)
+
+
+class FakeOpenClipModel:
+    def __init__(self, missing_keys: list[str] | None = None, unexpected_keys: list[str] | None = None) -> None:
+        self.missing_keys = missing_keys or []
+        self.unexpected_keys = unexpected_keys or []
+        self.loaded_state_dict = None
+
+    def load_state_dict(self, state_dict: dict[str, object], strict: bool = False) -> SimpleNamespace:
+        self.loaded_state_dict = state_dict
+        return SimpleNamespace(missing_keys=self.missing_keys, unexpected_keys=self.unexpected_keys)
+
+    def eval(self) -> "FakeOpenClipModel":
+        return self
+
+
+def patched_remoteclip_modules(
+    *,
+    checkpoint: dict[str, object],
+    missing_keys: list[str] | None = None,
+    unexpected_keys: list[str] | None = None,
+):
+    fake_torch = SimpleNamespace(
+        __version__="fake-torch",
+        cuda=SimpleNamespace(is_available=lambda: False, get_device_name=lambda device: None),
+        load=lambda path, map_location=None: checkpoint,
+    )
+    fake_open_clip = SimpleNamespace(
+        __version__="fake-open-clip",
+        create_model=lambda name, pretrained=None, device="cpu": FakeOpenClipModel(missing_keys, unexpected_keys),
+    )
+    return patch.dict(sys.modules, {"torch": fake_torch, "open_clip": fake_open_clip})
 
 
 if __name__ == "__main__":
