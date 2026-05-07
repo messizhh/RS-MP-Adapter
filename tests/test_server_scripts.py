@@ -7,6 +7,7 @@ from pathlib import Path
 
 SERVER_SCRIPTS = [
     Path("scripts/server/check_server_preflight.sh"),
+    Path("scripts/server/run_feature_extraction_guarded.sh"),
     Path("scripts/server/run_phase1_baselines.sh"),
     Path("scripts/server/run_rs_cpc_sweep.sh"),
     Path("scripts/server/run_ablation.sh"),
@@ -14,6 +15,7 @@ SERVER_SCRIPTS = [
 ]
 
 SERVER_RUNNER_TEMPLATES = [
+    Path("scripts/server/run_feature_extraction_guarded.sh"),
     Path("scripts/server/run_phase1_baselines.sh"),
     Path("scripts/server/run_rs_cpc_sweep.sh"),
     Path("scripts/server/run_ablation.sh"),
@@ -54,6 +56,16 @@ class ServerScriptTemplateTest(unittest.TestCase):
         text = Path("scripts/server/export_tables.sh").read_text(encoding="utf-8")
         self.assertIn("server_full server_ablation server_benchmark", text)
         self.assertIn("dry_run smoke_test debug tiny_subset local_validation", text)
+
+    def test_guarded_feature_extraction_template_uses_real_extraction_guard(self) -> None:
+        text = Path("scripts/server/run_feature_extraction_guarded.sh").read_text(encoding="utf-8")
+        self.assertIn("scripts/extract_features.py", text)
+        self.assertIn("--allow-real-extraction", text)
+        self.assertIn("--weights-path", text)
+        self.assertIn("--split", text)
+        self.assertIn("--dataset-root", text)
+        self.assertIn("--paper-result-candidate", text)
+        self.assertIn("TODO_REMOTECLIP_WEIGHTS_FILE", text)
 
     def test_server_scripts_do_not_contain_private_absolute_paths(self) -> None:
         private_path_pattern = re.compile(r"(/home/|/mnt/|/Users/|[A-Za-z]:\\\\)")
