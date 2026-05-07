@@ -3,5 +3,10 @@ backbone:
   family: remoteclip
   feature_dim: 512
   weights: null
+  image_size: 224
   normalize_features: true
   allow_download: false
+  preprocess:
+    resize: 224
+    center_crop: 224
+    normalize: true
