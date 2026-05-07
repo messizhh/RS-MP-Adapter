@@ -213,9 +213,79 @@ class ExtractFeaturesTest(unittest.TestCase):
             self.assertIn("end_time", cache.metadata)
             self.assertFalse(cache.metadata["extracts_text_features"])
             self.assertFalse(cache.metadata["saves_predictions"])
+            self.assertFalse(cache.metadata["saves_logits"])
             self.assertFalse(cache.metadata["trains_model"])
             self.assertFalse(cache.metadata["evaluates_model"])
             self.assertEqual(summary["feature_shape"], [2, 512])
+
+    def test_guarded_real_extraction_applies_max_samples_before_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            dataset_root = base / "dataset"
+            rows = []
+            for index in range(4):
+                image_path = dataset_root / "class_a" / f"{index}.png"
+                make_image(image_path)
+                rows.append({"path": f"class_a/{index}.png", "label": 0})
+            split_path = base / "split.json"
+            split_path.write_text(json.dumps({"class_to_idx": {"class_a": 0}, "test": rows}), encoding="utf-8")
+            weights_path = base / "remoteclip.pt"
+            weights_path.write_bytes(b"placeholder\n")
+            backbone_config = {
+                "backbone": {
+                    "name": "remoteclip_vit_b32",
+                    "family": "remoteclip",
+                    "feature_dim": 512,
+                    "image_size": 224,
+                    "weights": None,
+                    "allow_download": False,
+                    "normalize_features": True,
+                }
+            }
+
+            with patched_remoteclip_modules(checkpoint={"state_dict": {"visual.proj": torch.ones(1)}}):
+                result = run_guarded_real_feature_extraction(
+                    dataset="eurosat",
+                    backbone_name="remoteclip_vit_b32",
+                    backbone_config=backbone_config,
+                    output_dir=base / "outputs" / "preflight" / "guarded_real_extraction_sanity",
+                    split_path=split_path,
+                    split_section="test",
+                    dataset_root=dataset_root,
+                    weights_path=weights_path,
+                    batch_size=2,
+                    max_samples=2,
+                    device="cpu",
+                    execution_env="remote_server",
+                    run_mode="server_full",
+                    command="pytest guarded max samples",
+                    is_paper_result_candidate=True,
+                )
+
+            cache = load_feature_cache(result["cache_path"])
+            summary = read_json(result["summary_path"])
+            self.assertEqual(tuple(cache.image_features.shape), (2, 512))
+            self.assertEqual(len(cache.image_paths), 2)
+            self.assertEqual(cache.metadata["image_count"], 2)
+            self.assertEqual(cache.metadata["max_samples"], 2)
+            self.assertEqual(cache.metadata["requested_max_samples"], 2)
+            self.assertEqual(cache.metadata["image_count_before_limit"], 4)
+            self.assertEqual(cache.metadata["image_count_after_limit"], 2)
+            self.assertTrue(cache.metadata["max_samples_applied"])
+            self.assertTrue(cache.metadata["is_limited_real_extraction"])
+            self.assertFalse(cache.metadata["is_full_split_extraction"])
+            self.assertFalse(cache.metadata["is_full_feature_extraction"])
+            self.assertFalse(cache.metadata["is_paper_result"])
+            self.assertFalse(cache.metadata["eligible_for_paper_tables"])
+            self.assertFalse(cache.metadata["is_paper_result_candidate"])
+            self.assertFalse(cache.metadata["extracts_text_features"])
+            self.assertFalse(cache.metadata["saves_predictions"])
+            self.assertFalse(cache.metadata["saves_logits"])
+            self.assertFalse(cache.metadata["trains_model"])
+            self.assertFalse(cache.metadata["evaluates_model"])
+            self.assertEqual(summary["image_count"], 2)
+            self.assertEqual(summary["image_count_before_limit"], 4)
+            self.assertTrue(summary["max_samples_applied"])
 
     def test_guarded_real_extraction_rejects_local_or_tiny_modes_before_loading(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

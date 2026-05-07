@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--feature-cache", default="", help="Reserved for CLI consistency; extraction writes a new cache.")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--max-samples", type=int, default=12)
+    parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="cpu")
@@ -62,6 +62,7 @@ def main() -> None:
             dataset_root=dataset_root,
             weights_path=args.weights_path,
             batch_size=args.batch_size,
+            max_samples=args.max_samples,
             device=args.device,
             execution_env=args.execution_env,
             run_mode=args.run_mode,
@@ -81,7 +82,7 @@ def main() -> None:
         backbone_config=backbone_config,
         output_dir=args.output_dir,
         split_path=args.split,
-        max_samples=args.max_samples,
+        max_samples=args.max_samples if args.max_samples is not None else 12,
         batch_size=args.batch_size,
         device=args.device,
         execution_env=args.execution_env,

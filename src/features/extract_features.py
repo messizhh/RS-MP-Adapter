@@ -121,6 +121,7 @@ def run_guarded_real_feature_extraction(
     dataset_root: str | Path,
     weights_path: str | Path,
     batch_size: int,
+    max_samples: int | None = None,
     device: str,
     execution_env: str,
     run_mode: str,
@@ -137,6 +138,7 @@ def run_guarded_real_feature_extraction(
         execution_env=execution_env,
         run_mode=run_mode,
         batch_size=batch_size,
+        max_samples=max_samples,
     )
     if errors:
         raise ValueError("; ".join(errors))
@@ -153,6 +155,12 @@ def run_guarded_real_feature_extraction(
         split_section=split_section,
         dataset_root=Path(dataset_root),
     )
+    image_count_before_limit = len(selected.image_paths)
+    requested_max_samples = max_samples
+    if max_samples is not None:
+        selected = selected.limit(max_samples)
+    image_count_after_limit = len(selected.image_paths)
+    max_samples_applied = requested_max_samples is not None and image_count_after_limit < image_count_before_limit
     if not selected.image_paths:
         raise ValueError(f"split section {split_section!r} produced zero images")
     for image_path in selected.image_paths:
@@ -210,19 +218,27 @@ def run_guarded_real_feature_extraction(
         raise RuntimeError("image feature norm stats are not finite")
 
     end_time = utc_now_iso()
+    is_limited_real_extraction = requested_max_samples is not None
+    is_full_split_extraction = not is_limited_real_extraction
+    effective_paper_candidate = bool(is_paper_result_candidate) and is_full_split_extraction
     metadata = {
         "git_commit": git_commit(),
         "command": command or shell_join(sys.argv),
         "execution_env": execution_env,
         "run_mode": run_mode,
         "is_paper_result": False,
-        "is_paper_result_candidate": bool(is_paper_result_candidate),
+        "is_paper_result_candidate": effective_paper_candidate,
         "eligible_for_paper_tables": False,
         "dataset": dataset,
         "backbone": backbone_name,
         "split_path": str(split_path),
         "split_section": split_section,
-        "image_count": len(selected.image_paths),
+        "image_count": image_count_after_limit,
+        "max_samples": requested_max_samples,
+        "requested_max_samples": requested_max_samples,
+        "image_count_before_limit": image_count_before_limit,
+        "image_count_after_limit": image_count_after_limit,
+        "max_samples_applied": max_samples_applied,
         "feature_shape": feature_shape,
         "feature_norm_stats": feature_norm_stats,
         "weights_source": "cli_override",
@@ -238,11 +254,14 @@ def run_guarded_real_feature_extraction(
         "unexpected_keys_count": int(load_metadata.get("unexpected_keys_count", 0)),
         "extracts_text_features": False,
         "saves_predictions": False,
+        "saves_logits": False,
         "trains_model": False,
         "evaluates_model": False,
         "downloads_weights": False,
         "is_real_feature_extraction": True,
-        "is_full_feature_extraction": True,
+        "is_limited_real_extraction": is_limited_real_extraction,
+        "is_full_split_extraction": is_full_split_extraction,
+        "is_full_feature_extraction": is_full_split_extraction,
         "model_load_time_sec": model_load_time_sec,
         "preprocess_time_sec": preprocess_time_sec,
         "encode_time_sec": encode_time_sec,
@@ -305,6 +324,9 @@ class SplitImageSelection:
         self.labels = labels
         self.class_to_idx = class_to_idx
 
+    def limit(self, max_samples: int) -> "SplitImageSelection":
+        return SplitImageSelection(self.image_paths[:max_samples], self.labels[:max_samples], self.class_to_idx)
+
 
 def validate_real_extraction_guard(
     *,
@@ -314,6 +336,7 @@ def validate_real_extraction_guard(
     execution_env: str,
     run_mode: str,
     batch_size: int,
+    max_samples: int | None = None,
 ) -> list[str]:
     errors = []
     if execution_env != "remote_server":
@@ -334,6 +357,8 @@ def validate_real_extraction_guard(
         errors.append(f"weights path does not exist: {weights_path}")
     if batch_size <= 0:
         errors.append("--batch-size must be positive")
+    if max_samples is not None and max_samples <= 0:
+        errors.append("--max-samples must be positive when provided")
     return errors
 
 
