@@ -90,6 +90,17 @@ class RemoteClipBackbone(BaseBackbone):
         self.load_metadata = load_metadata
         return self
 
+    def encode_image_preflight(self, image_tensor: Any) -> Any:
+        self._require_loaded()
+        if self.model is None:
+            raise BackboneUnavailableError("RemoteCLIP model is not available for image feature preflight.")
+        try:
+            import torch
+        except ImportError as exc:
+            raise BackboneUnavailableError("RemoteCLIP image feature preflight requires torch.") from exc
+        with torch.no_grad():
+            return self.model.encode_image(image_tensor.to(self.device))
+
 
 def checkpoint_state_dict(checkpoint: Any) -> tuple[dict[str, Any], str]:
     if isinstance(checkpoint, dict):
