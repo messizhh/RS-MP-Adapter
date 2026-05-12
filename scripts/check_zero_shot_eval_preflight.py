@@ -26,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--backbone", required=True)
     parser.add_argument("--base-split", required=True)
+    parser.add_argument("--text-feature-cache", default=None)
+    parser.add_argument("--text-feature-preflight-report", default=None)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--execution-env", required=True)
     parser.add_argument("--run-mode", required=True)
@@ -39,6 +41,8 @@ def main() -> None:
         dataset=args.dataset,
         backbone=args.backbone,
         base_split=args.base_split,
+        text_feature_cache=args.text_feature_cache,
+        text_feature_preflight_report=args.text_feature_preflight_report,
         output_dir=args.output_dir,
         execution_env=args.execution_env,
         run_mode=args.run_mode,
@@ -58,6 +62,8 @@ def run_zero_shot_eval_preflight(
     output_dir: str | Path,
     execution_env: str,
     run_mode: str,
+    text_feature_cache: str | Path | None = None,
+    text_feature_preflight_report: str | Path | None = None,
     command: str | None = None,
 ) -> tuple[Path, bool]:
     errors: list[str] = []
@@ -91,26 +97,58 @@ def run_zero_shot_eval_preflight(
 
     feature_dim = infer_single_value([inspection.get("feature_dim") for inspection in inspections.values()], "feature_dim", errors)
     num_classes = infer_num_classes(reference_class_to_idx, inspections, errors)
+    embedded_text_errors: list[str] = []
     text_feature_summary = build_text_feature_summary(
         inspections=inspections,
         entries=base_entries,
         num_classes=num_classes,
         feature_dim=feature_dim,
         warnings=warnings,
-        errors=errors,
+        errors=embedded_text_errors,
     )
+    standalone_text_summary = build_standalone_text_feature_summary(
+        explicit_text_feature_cache=text_feature_cache,
+        text_feature_preflight_report=text_feature_preflight_report,
+        entries=selected_entries,
+        base_request=base_request,
+        dataset=dataset,
+        backbone=backbone,
+        class_to_idx=reference_class_to_idx,
+        num_classes=num_classes,
+        feature_dim=feature_dim,
+        warnings=warnings,
+    )
+    text_feature_summary["standalone"] = standalone_text_summary
 
     val_ready = bool(image_cache_summary.get("val", {}).get("is_ready"))
     test_ready = bool(image_cache_summary.get("test", {}).get("is_ready"))
     valid_text_sections = set(text_feature_summary.get("valid_text_feature_sections", []))
     missing_eval_text_sections = [section for section in ("val", "test") if section not in valid_text_sections]
-    for section in missing_eval_text_sections:
-        errors.append(f"{section}: zero-shot cached evaluation requires valid text_features in the {section} cache")
-    zero_shot_input_ready = not errors and not missing_eval_text_sections and val_ready and test_ready
-    if missing_eval_text_sections:
+    embedded_text_ready = not embedded_text_errors and not missing_eval_text_sections
+    standalone_text_ready = bool(standalone_text_summary.get("standalone_text_feature_cache_ready"))
+    standalone_requested = text_feature_cache is not None or text_feature_preflight_report is not None
+    text_feature_source = "standalone_cache" if standalone_text_ready else None
+    if not standalone_text_ready and embedded_text_ready and not standalone_requested:
+        text_feature_source = "embedded_in_image_cache"
+
+    if standalone_requested and not standalone_text_ready:
+        errors.extend(str(error) for error in standalone_text_summary.get("errors", []))
+    elif not standalone_text_ready and not embedded_text_ready:
+        errors.extend(embedded_text_errors)
+        errors.extend(str(error) for error in standalone_text_summary.get("errors", []))
+        for section in missing_eval_text_sections:
+            errors.append(
+                f"{section}: zero-shot cached evaluation requires valid text_features from a standalone text cache "
+                "or embedded image cache"
+            )
+    zero_shot_input_ready = not errors and val_ready and test_ready and bool(text_feature_source)
+    real_zero_shot_input_ready = zero_shot_input_ready and (
+        text_feature_source != "standalone_cache" or standalone_text_ready
+    )
+    if missing_eval_text_sections and not standalone_text_ready:
         recommendations.append(
-            "Generate or attach text_features to the val/test caches with shape [num_classes, feature_dim] "
-            "before running cached zero-shot evaluation."
+            "Generate a standalone text_feature_cache.pt with shape [num_classes, feature_dim], or provide one with "
+            "--text-feature-cache before running cached zero-shot evaluation."
         )
     if not val_ready or not test_ready:
         recommendations.append("Fix val/test image cache readiness before running cached zero-shot evaluation.")
@@ -118,6 +156,7 @@ def run_zero_shot_eval_preflight(
     report = {
         "is_valid": zero_shot_input_ready,
         "zero_shot_input_ready": zero_shot_input_ready,
+        "real_zero_shot_input_ready": real_zero_shot_input_ready,
         "errors": errors,
         "warnings": sorted(set(warnings)),
         "recommendations": recommendations,
@@ -133,6 +172,9 @@ def run_zero_shot_eval_preflight(
         "feature_dim": feature_dim,
         "num_classes": num_classes,
         "text_feature_summary": text_feature_summary,
+        "standalone_text_feature_cache_path": standalone_text_summary.get("selected_path"),
+        "standalone_text_feature_cache_ready": standalone_text_ready,
+        "text_feature_source": text_feature_source,
         "image_cache_summary": image_cache_summary,
         "val_ready_for_eval_input": val_ready,
         "test_ready_for_eval_input": test_ready,
@@ -491,6 +533,218 @@ def prompt_summary(inspection: dict[str, Any], num_classes: int | None, warnings
         "prompt_metadata_keys": inspection.get("prompt_metadata_keys", []),
         "prompt_count_valid": valid,
     }
+
+
+def build_standalone_text_feature_summary(
+    *,
+    explicit_text_feature_cache: str | Path | None,
+    text_feature_preflight_report: str | Path | None,
+    entries: list[dict[str, Any]],
+    base_request: dict[str, Any],
+    dataset: str,
+    backbone: str,
+    class_to_idx: dict[str, int] | None,
+    num_classes: int | None,
+    feature_dim: int | None,
+    warnings: list[str],
+) -> dict[str, Any]:
+    candidates = find_standalone_text_feature_candidates(
+        explicit_text_feature_cache=explicit_text_feature_cache,
+        text_feature_preflight_report=text_feature_preflight_report,
+        entries=entries,
+        base_request=base_request,
+        warnings=warnings,
+    )
+    candidate_summaries = [
+        summarize_standalone_text_feature_candidate(
+            path=path,
+            dataset=dataset,
+            backbone=backbone,
+            base_split_id=base_request["split_id"],
+            class_to_idx=class_to_idx,
+            num_classes=num_classes,
+            feature_dim=feature_dim,
+        )
+        for path in candidates
+    ]
+    candidate_summaries = sorted(candidate_summaries, key=standalone_candidate_rank_key, reverse=True)
+    for index, summary in enumerate(candidate_summaries, start=1):
+        summary["selection_rank"] = index
+    selected = candidate_summaries[0] if candidate_summaries else None
+    errors = list(selected.get("errors", [])) if selected else []
+    selected_path = selected.get("path") if selected else None
+    ready = bool(selected and selected.get("selectable") and not selected.get("dry_run") and not selected.get("uses_fake_text_features"))
+    if selected and selected.get("selectable") and (selected.get("dry_run") or selected.get("uses_fake_text_features")):
+        errors.append("standalone text cache uses dry-run/fake text features and is not valid for real zero-shot input")
+        warnings.append("standalone text cache uses dry-run/fake text features; generate a real text cache for evaluation")
+    return {
+        "standalone_text_feature_cache_ready": ready,
+        "selected_path": selected_path,
+        "candidates": candidate_summaries,
+        "errors": errors,
+        "source_requested": explicit_text_feature_cache is not None or text_feature_preflight_report is not None,
+    }
+
+
+def find_standalone_text_feature_candidates(
+    *,
+    explicit_text_feature_cache: str | Path | None,
+    text_feature_preflight_report: str | Path | None,
+    entries: list[dict[str, Any]],
+    base_request: dict[str, Any],
+    warnings: list[str],
+) -> list[Path]:
+    candidates: list[Path] = []
+    if explicit_text_feature_cache is not None:
+        candidates.append(Path(explicit_text_feature_cache))
+        return dedupe_paths(candidates)
+    if text_feature_preflight_report is not None:
+        report = read_json(text_feature_preflight_report)
+        for key in ("selected_text_feature_cache_path", "proposed_text_feature_cache_path"):
+            value = report.get(key)
+            if isinstance(value, str) and value:
+                candidates.append(Path(value))
+        for item in report.get("text_feature_cache_candidates", []):
+            if isinstance(item, dict) and isinstance(item.get("path"), str):
+                candidates.append(Path(item["path"]))
+        return dedupe_paths(candidates)
+
+    base_feature_dir = infer_base_feature_dir(entries, base_request)
+    if base_feature_dir is not None:
+        text_dir = base_feature_dir / "text"
+        if text_dir.exists() and text_dir.is_dir():
+            candidates.extend(sorted(text_dir.rglob("text_feature_cache.pt")))
+    else:
+        warnings.append("could not infer standalone text cache directory from image feature manifest")
+    return dedupe_paths(candidates)
+
+
+def summarize_standalone_text_feature_candidate(
+    *,
+    path: Path,
+    dataset: str,
+    backbone: str,
+    base_split_id: str,
+    class_to_idx: dict[str, int] | None,
+    num_classes: int | None,
+    feature_dim: int | None,
+) -> dict[str, Any]:
+    errors: list[str] = []
+    if not path.exists():
+        return {
+            "path": str(path),
+            "exists": False,
+            "selectable": False,
+            "errors": [f"standalone text feature cache does not exist: {path}"],
+        }
+    try:
+        with path.open("rb") as handle:
+            data = pickle.load(handle)
+    except Exception as exc:
+        return {"path": str(path), "exists": True, "selectable": False, "errors": [f"failed to read {path}: {exc}"]}
+    if not isinstance(data, dict):
+        return {"path": str(path), "exists": True, "selectable": False, "errors": [f"{path}: cache must contain a mapping"]}
+
+    text_shape = list(shape_of_2d(data.get("text_features")))
+    cache_class_to_idx = data.get("class_to_idx")
+    cache_class_names = [str(item) for item in data.get("class_names", [])] if isinstance(data.get("class_names"), list) else []
+    expected_shape = [num_classes, feature_dim] if num_classes is not None and feature_dim is not None else None
+    if expected_shape is not None and text_shape != expected_shape:
+        errors.append(f"{path}: text_features shape {text_shape} does not equal expected {expected_shape}")
+    if data.get("dataset") != dataset:
+        errors.append(f"{path}: dataset mismatch, expected {dataset}, found {data.get('dataset')}")
+    if data.get("backbone") != backbone:
+        errors.append(f"{path}: backbone mismatch, expected {backbone}, found {data.get('backbone')}")
+    if str(data.get("base_split", "")) != base_split_id:
+        errors.append(f"{path}: base_split mismatch, expected {base_split_id}, found {data.get('base_split')}")
+    if class_to_idx is not None and cache_class_to_idx != class_to_idx:
+        errors.append(f"{path}: class_to_idx does not match image cache/base split class order")
+    if class_to_idx is not None:
+        expected_class_names = [name for name, _ in sorted(class_to_idx.items(), key=lambda item: int(item[1]))]
+        if cache_class_names != expected_class_names:
+            errors.append(f"{path}: class_names do not match class_to_idx order")
+    if data.get("is_paper_result") is not False:
+        errors.append(f"{path}: is_paper_result must be false")
+    dry_run = bool(data.get("dry_run", False))
+    uses_fake = bool(data.get("uses_fake_text_features", False))
+    selectable = not errors and expected_shape is not None and text_shape == expected_shape
+    return {
+        "path": str(path),
+        "exists": True,
+        "dry_run": dry_run,
+        "uses_fake_text_features": uses_fake,
+        "is_paper_result": data.get("is_paper_result"),
+        "text_feature_shape": text_shape,
+        "created_at": data.get("created_at"),
+        "timestamp": standalone_candidate_timestamp(path, data.get("created_at")),
+        "selectable": selectable,
+        "selection_reason": standalone_selection_reason(errors, selectable, dry_run, uses_fake),
+        "errors": errors,
+    }
+
+
+def standalone_candidate_rank_key(summary: dict[str, Any]) -> tuple[int, int, int, int, str, str]:
+    return (
+        int(bool(summary.get("selectable"))),
+        int(not bool(summary.get("dry_run"))),
+        int(not bool(summary.get("uses_fake_text_features"))),
+        int(summary.get("is_paper_result") is False),
+        str(summary.get("timestamp") or ""),
+        str(summary.get("path") or ""),
+    )
+
+
+def standalone_selection_reason(errors: list[str], selectable: bool, dry_run: bool, uses_fake: bool) -> str:
+    if errors:
+        return "not selectable: " + "; ".join(errors)
+    if not selectable:
+        return "not selectable: missing expected shape metadata"
+    if dry_run or uses_fake:
+        return "selectable only for fake/local checks; not real zero-shot-ready"
+    return "selected real standalone text feature cache"
+
+
+def standalone_candidate_timestamp(path: Path, created_at: Any) -> str:
+    if isinstance(created_at, str) and created_at:
+        return created_at
+    for part in reversed(path.parts):
+        if re.fullmatch(r"\d{8}T\d{6}(?:_\d+)?", part):
+            return part
+    return ""
+
+
+def infer_base_feature_dir(entries: list[dict[str, Any]], base_request: dict[str, Any]) -> Path | None:
+    for section in BASE_SECTIONS:
+        matches = [
+            entry
+            for entry in entries
+            if entry.get("split_section") == section and entry_matches_request(entry, base_request)
+        ]
+        if not matches:
+            continue
+        entry = sorted(matches, key=lambda item: str(item.get("run_dir", item.get("feature_cache_path", ""))))[0]
+        run_dir = path_or_none(entry.get("run_dir"))
+        if run_dir is not None and run_dir.parent.name == section:
+            return run_dir.parent.parent
+        cache_path = path_or_none(entry.get("feature_cache_path"))
+        if cache_path is not None and cache_path.parent.parent.name == section:
+            return cache_path.parent.parent.parent
+    return None
+
+
+def path_or_none(value: Any) -> Path | None:
+    return Path(value) if isinstance(value, str) and value else None
+
+
+def dedupe_paths(paths: list[Path]) -> list[Path]:
+    unique = []
+    seen = set()
+    for path in paths:
+        key = str(path.resolve() if path.exists() else path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
 
 
 def public_image_summary(inspection: dict[str, Any]) -> dict[str, Any]:

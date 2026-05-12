@@ -105,7 +105,19 @@ def run_text_feature_cache_preflight(
         base_request=base_request,
         proposed_path=proposed_text_feature_cache_path,
     )
-    text_cache_path = choose_text_cache_candidate(text_cache_candidates, warnings)
+    candidate_summaries = summarize_text_feature_cache_candidates(
+        candidates=text_cache_candidates,
+        dataset=dataset,
+        backbone=backbone,
+        base_split_id=base_request["split_id"],
+        class_to_idx=class_to_idx,
+        class_names=class_names,
+        expected_feature_dim=expected_feature_dim,
+        prompt_templates=prompt_templates,
+        execution_env=execution_env,
+        run_mode=run_mode,
+    )
+    text_cache_path = choose_text_cache_candidate(candidate_summaries, warnings)
     text_cache_exists = text_cache_path is not None and text_cache_path.exists()
     text_cache_inspection: dict[str, Any] = {
         "path": str(text_cache_path) if text_cache_path is not None else None,
@@ -149,6 +161,7 @@ def run_text_feature_cache_preflight(
         ),
         "proposed_text_feature_cache_path": str(proposed_text_feature_cache_path),
         "selected_text_feature_cache_path": str(text_cache_path) if text_cache_path is not None else None,
+        "text_feature_cache_candidates": candidate_summaries,
         "text_feature_cache_inspection": text_cache_inspection,
         "dataset": dataset,
         "backbone": backbone,
@@ -387,13 +400,109 @@ def find_text_feature_cache_candidates(
     return unique
 
 
-def choose_text_cache_candidate(candidates: list[Path], warnings: list[str]) -> Path | None:
-    if not candidates:
+def summarize_text_feature_cache_candidates(
+    *,
+    candidates: list[Path],
+    dataset: str,
+    backbone: str,
+    base_split_id: str,
+    class_to_idx: dict[str, int],
+    class_names: list[str],
+    expected_feature_dim: int | None,
+    prompt_templates: list[str],
+    execution_env: str,
+    run_mode: str,
+) -> list[dict[str, Any]]:
+    summaries = []
+    for path in candidates:
+        local_errors: list[str] = []
+        local_warnings: list[str] = []
+        inspection = inspect_text_feature_cache(
+            path,
+            dataset=dataset,
+            backbone=backbone,
+            base_split_id=base_split_id,
+            class_to_idx=class_to_idx,
+            class_names=class_names,
+            expected_feature_dim=expected_feature_dim,
+            prompt_templates=prompt_templates,
+            execution_env=execution_env,
+            run_mode=run_mode,
+            errors=local_errors,
+            warnings=local_warnings,
+        )
+        shape_valid = bool(
+            class_names
+            and expected_feature_dim is not None
+            and inspection.get("text_feature_shape") == [len(class_names), expected_feature_dim]
+        )
+        selectable = bool(path.exists() and shape_valid and not local_errors)
+        summary = {
+            "path": str(path),
+            "dry_run": bool(inspection.get("dry_run", False)),
+            "uses_fake_text_features": bool(inspection.get("uses_fake_text_features", False)),
+            "is_paper_result": inspection.get("is_paper_result"),
+            "text_feature_shape": inspection.get("text_feature_shape", []),
+            "created_at": inspection.get("created_at"),
+            "timestamp": candidate_timestamp(path, inspection.get("created_at")),
+            "selectable": selectable,
+            "selection_reason": selection_reason(inspection, local_errors, shape_valid),
+            "errors": local_errors,
+            "warnings": local_warnings,
+        }
+        summaries.append(summary)
+    ranked = sorted(summaries, key=candidate_rank_key, reverse=True)
+    for index, summary in enumerate(ranked, start=1):
+        summary["selection_rank"] = index
+    return ranked
+
+
+def choose_text_cache_candidate(candidate_summaries: list[dict[str, Any]], warnings: list[str]) -> Path | None:
+    if not candidate_summaries:
         return None
-    candidates = sorted(candidates)
-    if len(candidates) > 1:
-        warnings.append(f"found {len(candidates)} text feature cache candidates; using the first sorted path")
-    return candidates[0]
+    if len(candidate_summaries) > 1:
+        warnings.append(
+            f"found {len(candidate_summaries)} text feature cache candidates; selecting highest-ranked cache by "
+            "real/non-fake status, schema validity, and newest timestamp"
+        )
+    selected = candidate_summaries[0]
+    if selected.get("dry_run") or selected.get("uses_fake_text_features"):
+        warnings.append(
+            "selected text feature cache uses fake/dry-run text features; it is acceptable for preflight shape checks "
+            "but must not be used for real zero-shot evaluation"
+        )
+    return Path(str(selected["path"]))
+
+
+def candidate_rank_key(summary: dict[str, Any]) -> tuple[int, int, int, int, int, str, str]:
+    return (
+        int(bool(summary.get("selectable"))),
+        int(not bool(summary.get("dry_run"))),
+        int(not bool(summary.get("uses_fake_text_features"))),
+        int(summary.get("is_paper_result") is False),
+        int(bool(summary.get("text_feature_shape"))),
+        str(summary.get("timestamp") or ""),
+        str(summary.get("path") or ""),
+    )
+
+
+def selection_reason(inspection: dict[str, Any], errors: list[str], shape_valid: bool) -> str:
+    if errors:
+        return "not selectable: " + "; ".join(errors)
+    if not shape_valid:
+        return "not selectable: text_features shape does not match expected [num_classes, feature_dim]"
+    if bool(inspection.get("dry_run")) or bool(inspection.get("uses_fake_text_features")):
+        return "selectable for preflight only: dry-run/fake text features"
+    return "selectable real standalone text feature cache"
+
+
+def candidate_timestamp(path: Path, created_at: Any) -> str:
+    if isinstance(created_at, str) and created_at:
+        return created_at
+    for part in reversed(path.parts):
+        if re.fullmatch(r"\d{8}T\d{6}(?:_\d+)?", part):
+            return part
+    return ""
 
 
 def inspect_text_feature_cache(
@@ -447,6 +556,8 @@ def inspect_text_feature_cache(
             "git_commit": data.get("git_commit"),
             "execution_env": data.get("execution_env"),
             "run_mode": data.get("run_mode"),
+            "dry_run": data.get("dry_run"),
+            "uses_fake_text_features": data.get("uses_fake_text_features"),
             "is_paper_result": data.get("is_paper_result"),
         }
     )
@@ -496,6 +607,8 @@ def inspect_text_feature_cache(
         errors.append(f"{path}: run_mode must be recorded")
     elif data.get("run_mode") != run_mode:
         warnings.append(f"{path}: run_mode differs from this preflight request")
+    if bool(data.get("dry_run")) or bool(data.get("uses_fake_text_features")):
+        warnings.append(f"{path}: dry_run/uses_fake_text_features cache is not suitable for real zero-shot evaluation")
     if data.get("is_paper_result") is not False:
         errors.append(f"{path}: is_paper_result must be false for text feature cache preflight readiness")
     return inspection

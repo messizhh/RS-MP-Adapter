@@ -18,9 +18,11 @@ Feature extraction dry-runs write a feature cache and `feature_extraction_summar
 
 Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
 
-`scripts/check_zero_shot_eval_preflight.py` checks whether cached zero-shot evaluation inputs are present for a base split. It reads the feature-cache manifest and train/val/test caches, verifies image feature/label/path/class-map consistency, and checks that val/test caches contain text features shaped `[num_classes, feature_dim]` with prompt metadata or a clear class-order assumption.
+`scripts/check_zero_shot_eval_preflight.py` checks whether cached zero-shot evaluation inputs are present for a base split. It reads the feature-cache manifest and train/val/test image caches, verifies image feature/label/path/class-map consistency, and checks text features either from a standalone `text_feature_cache.pt` or from legacy embedded text features in image caches.
 
-This zero-shot preflight is not zero-shot evaluation. It does not load models, compute logits, compute accuracy, save predictions, train, evaluate, or write `results/raw`. If text features are missing or malformed, the report sets `zero_shot_input_ready=false` and records recommendations instead of crashing.
+The preferred input contract is image features from val/test image caches plus text features from a standalone text feature cache. The standalone text cache is an input artifact, not an evaluation result, and must not be written back into train/val/test image `feature_cache.pt` files. For real cached zero-shot input readiness, dry-run or fake text caches are rejected.
+
+This zero-shot preflight is not zero-shot evaluation. It does not load models, compute logits, compute accuracy, save predictions, train, evaluate, modify image caches, or write `results/raw`. If real standalone text features are missing or malformed, the report sets `zero_shot_input_ready=false` and records recommendations instead of crashing.
 
 Example:
 
@@ -30,6 +32,7 @@ python3 scripts/check_zero_shot_eval_preflight.py \
   --dataset eurosat \
   --backbone remoteclip_vit_b32 \
   --base-split base_seed1 \
+  --text-feature-cache outputs/features/remoteclip_vit_b32/eurosat/base_seed1/eurosat/remoteclip_vit_b32/text/20260512T140232/text_feature_cache.pt \
   --output-dir outputs/preflight/zero_shot_eval \
   --execution-env remote_server \
   --run-mode local_validation

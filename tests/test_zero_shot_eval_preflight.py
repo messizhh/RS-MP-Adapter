@@ -66,8 +66,107 @@ class ZeroShotEvalPreflightTest(unittest.TestCase):
             self.assertFalse(report["is_valid"])
             self.assertFalse(report["zero_shot_input_ready"])
             self.assertTrue(any("text_features" in error for error in report["errors"]))
-            self.assertTrue(any("Generate or attach text_features" in item for item in report["recommendations"]))
+            self.assertTrue(any("Generate a standalone text_feature_cache.pt" in item for item in report["recommendations"]))
             self.assertFalse(report["text_feature_summary"]["has_valid_text_features"])
+            self.assertFalse((root / "results" / "raw").exists())
+
+    def test_standalone_text_cache_passes_without_embedded_text_features(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path, base_split_path = write_fake_case(root, text_mode="missing")
+            standalone_path = (
+                root
+                / "features"
+                / "remoteclip_vit_b32"
+                / "eurosat"
+                / "base_seed1"
+                / "text"
+                / "20260512T140232"
+                / "text_feature_cache.pt"
+            )
+            write_standalone_text_cache(
+                standalone_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split="base_seed1",
+                num_classes=3,
+                feature_dim=4,
+                dry_run=False,
+                uses_fake_text_features=False,
+            )
+
+            report_path, is_valid = run_zero_shot_eval_preflight(
+                manifest_path=manifest_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(base_split_path),
+                text_feature_cache=standalone_path,
+                output_dir=root / "outputs" / "preflight" / "zero_shot_eval",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest zero-shot standalone text cache",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["is_valid"])
+            self.assertTrue(report["zero_shot_input_ready"])
+            self.assertTrue(report["real_zero_shot_input_ready"])
+            self.assertEqual(report["errors"], [])
+            self.assertEqual(report["standalone_text_feature_cache_path"], str(standalone_path))
+            self.assertTrue(report["standalone_text_feature_cache_ready"])
+            self.assertEqual(report["text_feature_source"], "standalone_cache")
+            self.assertFalse(report["text_feature_summary"]["has_valid_text_features"])
+            self.assertTrue(report["val_ready_for_eval_input"])
+            self.assertTrue(report["test_ready_for_eval_input"])
+            self.assertFalse(report["computes_logits"])
+            self.assertFalse(report["computes_accuracy"])
+            self.assertFalse((root / "results" / "raw").exists())
+
+    def test_dry_run_standalone_text_cache_is_not_real_zero_shot_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path, base_split_path = write_fake_case(root, text_mode="missing")
+            standalone_path = (
+                root
+                / "features"
+                / "remoteclip_vit_b32"
+                / "eurosat"
+                / "base_seed1"
+                / "text"
+                / "20260512T140000"
+                / "text_feature_cache.pt"
+            )
+            write_standalone_text_cache(
+                standalone_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split="base_seed1",
+                num_classes=3,
+                feature_dim=4,
+                dry_run=True,
+                uses_fake_text_features=True,
+            )
+
+            report_path, is_valid = run_zero_shot_eval_preflight(
+                manifest_path=manifest_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(base_split_path),
+                text_feature_cache=standalone_path,
+                output_dir=root / "outputs" / "preflight" / "zero_shot_eval",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest zero-shot dry standalone text cache",
+            )
+
+            report = read_json(report_path)
+            self.assertFalse(is_valid)
+            self.assertFalse(report["zero_shot_input_ready"])
+            self.assertFalse(report["real_zero_shot_input_ready"])
+            self.assertFalse(report["standalone_text_feature_cache_ready"])
+            self.assertTrue(any("dry-run/fake" in error for error in report["errors"]))
+            self.assertEqual(report["standalone_text_feature_cache_path"], str(standalone_path))
             self.assertFalse((root / "results" / "raw").exists())
 
     def test_bad_text_feature_shape_reports_error(self) -> None:
@@ -222,6 +321,46 @@ def write_summary_and_cache(
         },
     )
     return {"summary_path": str(summary_path), "feature_cache_path": str(cache_path), "run_dir": str(run_dir)}
+
+
+def write_standalone_text_cache(
+    path: Path,
+    *,
+    dataset: str,
+    backbone: str,
+    base_split: str,
+    num_classes: int,
+    feature_dim: int,
+    dry_run: bool,
+    uses_fake_text_features: bool,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    class_to_idx = {f"class_{idx}": idx for idx in range(num_classes)}
+    with path.open("wb") as handle:
+        pickle.dump(
+            {
+                "text_features": [[float(label + 1) for _ in range(feature_dim)] for label in range(num_classes)],
+                "class_names": [f"class_{idx}" for idx in range(num_classes)],
+                "class_to_idx": class_to_idx,
+                "prompts": [f"a satellite photo of class_{idx}." for idx in range(num_classes)],
+                "prompt_templates": ["a satellite photo of {}."],
+                "dataset": dataset,
+                "backbone": backbone,
+                "base_split": base_split,
+                "feature_dim": feature_dim,
+                "num_classes": num_classes,
+                "normalize_features": True,
+                "source_script": "tests/test_zero_shot_eval_preflight.py",
+                "created_at": "2026-05-12T14:02:32+00:00",
+                "git_commit": "abc123",
+                "execution_env": "local_wsl",
+                "run_mode": "local_validation",
+                "dry_run": dry_run,
+                "uses_fake_text_features": uses_fake_text_features,
+                "is_paper_result": False,
+            },
+            handle,
+        )
 
 
 if __name__ == "__main__":

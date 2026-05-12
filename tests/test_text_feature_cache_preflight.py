@@ -98,6 +98,60 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
             self.assertEqual(report["text_feature_cache_inspection"]["text_feature_shape"], [2, 512])
             self.assertFalse((root / "results" / "raw").exists())
 
+    def test_multiple_candidates_prefers_latest_real_non_fake_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case = write_fake_case(root, text_cache_mode="missing")
+            text_dir = case["text_cache_path"].parent
+            dry_path = text_dir / "20260512T140000" / "text_feature_cache.pt"
+            real_path = text_dir / "20260512T140232" / "text_feature_cache.pt"
+            write_text_cache(
+                dry_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed1",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=True,
+                uses_fake_text_features=True,
+                created_at="2026-05-12T14:00:00+00:00",
+            )
+            write_text_cache(
+                real_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed1",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=False,
+                uses_fake_text_features=False,
+                created_at="2026-05-12T14:02:32+00:00",
+            )
+
+            report_path, is_valid = run_text_feature_cache_preflight(
+                manifest_path=case["manifest_path"],
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(case["base_split_path"]),
+                output_dir=root / "outputs" / "preflight" / "text_features",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest text preflight multiple candidates",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["text_feature_cache_ready"])
+            self.assertEqual(report["selected_text_feature_cache_path"], str(real_path))
+            self.assertEqual(len(report["text_feature_cache_candidates"]), 2)
+            self.assertEqual(report["text_feature_cache_candidates"][0]["path"], str(real_path))
+            self.assertFalse(report["text_feature_cache_candidates"][0]["dry_run"])
+            self.assertFalse(report["text_feature_cache_candidates"][0]["uses_fake_text_features"])
+            self.assertEqual(report["text_feature_cache_candidates"][0]["selection_rank"], 1)
+            self.assertEqual(report["text_feature_cache_candidates"][1]["path"], str(dry_path))
+
     def test_results_raw_output_dir_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -228,6 +282,9 @@ def write_text_cache(
     num_classes: int,
     text_rows: int,
     feature_dim: int,
+    dry_run: bool = False,
+    uses_fake_text_features: bool = False,
+    created_at: str = "2026-05-12T00:00:00+00:00",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     class_to_idx = {f"class_{idx}": idx for idx in range(num_classes)}
@@ -245,10 +302,12 @@ def write_text_cache(
                 "num_classes": num_classes,
                 "normalize_features": True,
                 "source_script": "tests/test_text_feature_cache_preflight.py",
-                "created_at": "2026-05-12T00:00:00+00:00",
+                "created_at": created_at,
                 "git_commit": "abc123",
                 "execution_env": "local_wsl",
                 "run_mode": "local_validation",
+                "dry_run": dry_run,
+                "uses_fake_text_features": uses_fake_text_features,
                 "is_paper_result": False,
             },
             handle,
