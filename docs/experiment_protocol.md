@@ -101,6 +101,30 @@ python3 scripts/extract_text_features.py \
   --run-mode server_full
 ```
 
+`scripts/run_zero_shot.py` is the cached zero-shot evaluation runner. It is the first real evaluation step in the cached-feature workflow: it reads val/test image feature caches plus the standalone text feature cache, computes image-text cosine logits, computes top-1 accuracy, and writes a unique run directory under `results/raw`.
+
+Cached zero-shot evaluation does not load models, extract features, train, tune hyperparameters, or modify image/text caches. Predictions are not saved by default; use `--save-predictions` only when prediction rows are needed for inspection.
+
+Local or debug modes such as `dry_run`, `smoke_test`, `debug`, `tiny_subset`, and `local_validation` are always non-paper results. Paper-facing eligibility requires a server run mode such as `server_full` and explicit `--allow-paper-result`; otherwise `is_paper_result` remains false.
+
+Example cached evaluation command:
+
+```bash
+python3 scripts/run_zero_shot.py \
+  --config configs/methods/zero_shot_clip.yaml \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --text-feature-cache outputs/features/remoteclip_vit_b32/eurosat/base_seed1/eurosat/remoteclip_vit_b32/text/20260512T140232/text_feature_cache.pt \
+  --eval-splits val test \
+  --preflight-report outputs/preflight/zero_shot_eval/eurosat_remoteclip_vit_b32_seed1/20260512T141833/zero_shot_eval_preflight_report.json \
+  --output-dir results/raw \
+  --device cpu \
+  --execution-env remote_server \
+  --run-mode server_full
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
