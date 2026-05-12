@@ -41,6 +41,16 @@ python3 scripts/check_adapter_input_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/export_adapter_input_plan.py` derives a machine-readable sweep plan from an adapter input preflight report. It writes JSON and CSV files under `outputs/preflight/adapter_input_plans/...`, with one row per shot for Tip-Adapter and Proto-Adapter and one row per shot-by-`M` for RS-CPC. It is a planning artifact only: it does not load models, train, tune, evaluate, compute logits, compute accuracy, save predictions, or write `results/raw`.
+
+Example:
+
+```bash
+python3 scripts/export_adapter_input_plan.py \
+  --preflight-report outputs/preflight/adapter_input/eurosat_remoteclip_vit_b32_seed1/adapter_input_preflight_report.json \
+  --output-dir outputs/preflight/adapter_input_plans
+```
+
 ## Training-Free Method Validation
 
 Phase 1E method runners consume feature caches and can run on fake dry-run caches locally. Local runs must remain `execution_env: local_wsl`, `run_mode: smoke_test`, `device: cpu`, and `is_paper_result: false`.
