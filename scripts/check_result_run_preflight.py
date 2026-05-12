@@ -302,12 +302,33 @@ def check_zero_shot_metrics(metrics: dict[str, Any], errors: list[str]) -> None:
     total_samples = int_or_none(metrics.get("num_samples"))
     if total_samples is not None and split_sample_total and total_samples != split_sample_total:
         errors.append(f"metrics num_samples={total_samples} does not equal per_split total={split_sample_total}")
-    if num_classes is not None and int_or_none(metrics.get("cache_entries")) != num_classes:
-        errors.append("cache_entries must equal num_classes for zero-shot text cache")
+    check_cache_entries_by_method(metrics=metrics, num_classes=num_classes, errors=errors)
     if int_or_none(metrics.get("trainable_params")) != 0:
         errors.append("trainable_params must be 0 for zero-shot")
     if float_or_none(metrics.get("training_time_sec")) != 0.0:
         errors.append("training_time_sec must be 0.0 for zero-shot")
+
+
+def check_cache_entries_by_method(*, metrics: dict[str, Any], num_classes: int | None, errors: list[str]) -> None:
+    if num_classes is None:
+        return
+    method = str(metrics.get("method", ""))
+    cache_entries = int_or_none(metrics.get("cache_entries"))
+    if method == "zero_shot":
+        if cache_entries != num_classes:
+            errors.append("zero_shot cache_entries must equal num_classes")
+        return
+    if method == "proto_adapter":
+        if cache_entries != num_classes:
+            errors.append("proto_adapter cache_entries must equal num_classes")
+        return
+    if method == "tip_adapter":
+        shot = int_or_none(metrics.get("shot"))
+        if shot is None or shot <= 0:
+            errors.append("tip_adapter shot must be a positive integer to validate cache_entries")
+            return
+        if cache_entries != num_classes * shot:
+            errors.append("tip_adapter cache_entries must equal num_classes * shot")
 
 
 def check_paper_filtering(
@@ -360,6 +381,7 @@ def summarize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 def summarize_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     return {
         "method": metrics.get("method"),
+        "shot": metrics.get("shot"),
         "top1_acc": metrics.get("top1_acc"),
         "top1_acc_by_split": metrics.get("top1_acc_by_split"),
         "num_classes": metrics.get("num_classes"),

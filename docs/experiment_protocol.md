@@ -129,6 +129,8 @@ python3 scripts/run_zero_shot.py \
 
 This result preflight does not rerun evaluation, compute logits, recompute accuracy, train, delete files, or modify `metrics.json`/`metadata.json`. It writes only a separate report under `outputs/preflight/result_runs/...`.
 
+Cache-size validation is method-specific. For `zero_shot`, `cache_entries` must equal `num_classes`. For `proto_adapter`, `cache_entries` must equal `num_classes` even when a shot value is present, because it builds one prototype per class. For `tip_adapter`, `cache_entries` must equal `num_classes x shot`; `shot` must be present as a positive integer.
+
 Example:
 
 ```bash
