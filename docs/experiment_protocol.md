@@ -58,6 +58,46 @@ python3 scripts/check_text_feature_cache_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/extract_text_features.py` creates the standalone text feature cache consumed later by cached zero-shot evaluation. It reads the text feature cache preflight report for class order, prompt templates, and expected feature dimension, then writes `text_feature_cache.pt` plus `text_feature_extraction_summary.json` under a timestamped text-cache directory.
+
+This cache is an input artifact, not an evaluation result. It must keep `is_paper_result: false`, must not overwrite train/val/test image `feature_cache.pt` files, and must not write `results/raw`. It does not compute image-text logits, accuracy, predictions, or any training outputs.
+
+Dry-run mode is local-test only: it does not load a model and writes deterministic fake text features with `uses_fake_text_features: true`. Real mode is for server-side use with explicit local backbone weights only; automatic weight downloads remain disabled. For multiple prompt templates, each class gets all templates encoded, then the per-class prompt features are averaged and L2-normalized when the backbone config uses `normalize_features: true`.
+
+Example dry-run:
+
+```bash
+python3 scripts/extract_text_features.py \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --preflight-report outputs/preflight/text_features/eurosat_remoteclip_vit_b32_seed1/20260512T131625/text_feature_cache_preflight_report.json \
+  --backbone-config configs/backbones/remoteclip_vit_b32.yaml \
+  --method-config configs/methods/zero_shot_clip.yaml \
+  --output-dir outputs/features \
+  --device cpu \
+  --execution-env local_wsl \
+  --run-mode local_validation \
+  --dry-run
+```
+
+Example server real text extraction:
+
+```bash
+python3 scripts/extract_text_features.py \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --preflight-report outputs/preflight/text_features/eurosat_remoteclip_vit_b32_seed1/20260512T131625/text_feature_cache_preflight_report.json \
+  --backbone-config configs/backbones/remoteclip_vit_b32.yaml \
+  --method-config configs/methods/zero_shot_clip.yaml \
+  --weights-path "<REMOTECLIP_WEIGHTS_PATH>" \
+  --output-dir outputs/features \
+  --device cuda \
+  --execution-env remote_server \
+  --run-mode server_full
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.

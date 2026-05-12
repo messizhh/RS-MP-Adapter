@@ -134,6 +134,24 @@ class RemoteClipBackbone(BaseBackbone):
         with torch.no_grad():
             return self.model.encode_image(image_tensor.to(self.device))
 
+    def encode_text_preflight(self, prompts: list[str]) -> Any:
+        self._require_loaded()
+        if self.model is None:
+            raise BackboneUnavailableError("RemoteCLIP model is not available for text feature extraction.")
+        try:
+            import torch
+            import open_clip
+        except ImportError as exc:
+            raise BackboneUnavailableError("RemoteCLIP text feature extraction requires torch and open_clip.") from exc
+        tokenizer = getattr(open_clip, "tokenize", None)
+        if tokenizer is None and hasattr(open_clip, "get_tokenizer"):
+            tokenizer = open_clip.get_tokenizer("ViT-B-32")
+        if tokenizer is None:
+            raise BackboneUnavailableError("open_clip tokenizer is unavailable for RemoteCLIP text extraction.")
+        tokens = tokenizer(prompts).to(self.device)
+        with torch.no_grad():
+            return self.model.encode_text(tokens)
+
 
 def checkpoint_state_dict(checkpoint: Any) -> tuple[dict[str, Any], str]:
     if isinstance(checkpoint, dict):
