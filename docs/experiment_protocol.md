@@ -18,6 +18,23 @@ Feature extraction dry-runs write a feature cache and `feature_extraction_summar
 
 Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
 
+`scripts/check_zero_shot_eval_preflight.py` checks whether cached zero-shot evaluation inputs are present for a base split. It reads the feature-cache manifest and train/val/test caches, verifies image feature/label/path/class-map consistency, and checks that val/test caches contain text features shaped `[num_classes, feature_dim]` with prompt metadata or a clear class-order assumption.
+
+This zero-shot preflight is not zero-shot evaluation. It does not load models, compute logits, compute accuracy, save predictions, train, evaluate, or write `results/raw`. If text features are missing or malformed, the report sets `zero_shot_input_ready=false` and records recommendations instead of crashing.
+
+Example:
+
+```bash
+python3 scripts/check_zero_shot_eval_preflight.py \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --output-dir outputs/preflight/zero_shot_eval \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
