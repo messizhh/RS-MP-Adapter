@@ -18,6 +18,29 @@ Feature extraction dry-runs write a feature cache and `feature_extraction_summar
 
 Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
 
+## Adapter Input Preflight
+
+`scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
+
+This preflight does not train, tune, evaluate, compute logits, compute accuracy, save predictions, or create paper results. Reports must be written under `outputs/preflight/adapter_input/...`, not `results/raw`.
+
+For RS-CPC, default `M` values are `1, 2, 4, 8`. Each `M` is marked ready only when `M <=` the minimum per-class support count for that shot. Larger `M` values are reported with warnings and `method_input_ready_by_M=false`.
+
+Example:
+
+```bash
+python3 scripts/check_adapter_input_preflight.py \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --shot-splits shot_1_seed1 shot_2_seed1 shot_4_seed1 shot_8_seed1 shot_16_seed1 \
+  --methods tip_adapter proto_adapter rs_cpc \
+  --output-dir outputs/preflight/adapter_input \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Training-Free Method Validation
 
 Phase 1E method runners consume feature caches and can run on fake dry-run caches locally. Local runs must remain `execution_env: local_wsl`, `run_mode: smoke_test`, `device: cpu`, and `is_paper_result: false`.
