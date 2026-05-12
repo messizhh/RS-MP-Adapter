@@ -175,6 +175,35 @@ python3 scripts/export_adapter_input_plan.py \
   --output-dir outputs/preflight/adapter_input_plans
 ```
 
+`scripts/run_tip_adapter.py` and `scripts/run_proto_adapter.py` are cached training-free evaluation runners. They consume the adapter input preflight report and adapter input plan, load the shot support image feature cache as the adapter cache input, load val/test image feature caches from the base split, and load the standalone `text_feature_cache.pt` for zero-shot fusion.
+
+Tip-Adapter uses the support image features as the sample-level key-value cache, so `cache_entries = C x shot`. Proto-Adapter builds one mean prototype per class from the same support cache, so `cache_entries = C`. Both runners compute adapter/fused logits, top-1 accuracy, per-split metrics, and a unique run directory under `results/raw/{dataset}/{backbone}/{method}/shot_{shot}/seed_{seed}/{run_id}/`.
+
+These cached training-free adapter evaluations do not train, fine-tune, load CLIP/RemoteCLIP/GeoRSCLIP models, extract features, tune hyperparameters, modify input caches, or generate paper results by default. Predictions are not saved unless `--save-predictions` is passed. Local validation remains `is_paper_result: false` and is excluded from paper-facing tables; even server run modes require explicit `--allow-paper-result`.
+
+Example cached Tip-Adapter local validation command:
+
+```bash
+python3 scripts/run_tip_adapter.py \
+  --config configs/methods/tip_adapter.yaml \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --shot 16 \
+  --base-split base_seed1 \
+  --shot-split shot_16_seed1 \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --text-feature-cache outputs/features/remoteclip_vit_b32/eurosat/base_seed1/text/20260512T140232/text_feature_cache.pt \
+  --adapter-input-plan outputs/preflight/adapter_input_plans/eurosat_remoteclip_vit_b32_seed1/20260512T070522/adapter_input_plan.json \
+  --preflight-report outputs/preflight/adapter_input/eurosat_remoteclip_vit_b32_seed1/adapter_input_preflight_report.json \
+  --eval-splits val test \
+  --output-dir results/raw \
+  --device cpu \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
+Proto-Adapter uses the same command shape with `scripts/run_proto_adapter.py` and `configs/methods/proto_adapter.yaml`.
+
 `scripts/check_rs_cpc_prototype_preflight.py` consumes the adapter input plan and source preflight report, then performs RS-CPC prototype construction shape checks only for `method=rs_cpc` rows where `is_ready=true`. It loads support feature caches, constructs temporary prototypes in memory for supported initialization modes, checks prototype shapes and label counts, and writes a JSON report under `outputs/preflight/rs_cpc_prototypes/...`.
 
 This prototype preflight is not an experiment result. It does not load models, use val/test for tuning or evaluation, compute image-to-prototype logits, compute accuracy, save predictions, save prototype tensors, or write `results/raw`. `kmeans` is reserved and may be reported as unsupported for this preflight without failing.
