@@ -40,9 +40,7 @@ class PrototypeBuilder:
             groups = [indices[index::m] for index in range(m)]
             return [mean_feature([rows[idx] for idx in group]) for group in groups], groups
         if self.init_mode == "medoid":
-            sims = cosine_similarity_matrix(rows, rows)
-            scored = [(sum(row), idx) for idx, row in enumerate(sims)]
-            selected = [idx for _, idx in sorted(scored, reverse=True)[:m]]
+            selected = select_diverse_medoids(rows, m)
             return [rows[idx] for idx in selected], [[idx] for idx in selected]
         if self.init_mode == "kmeans":
             # Dependency-free Phase 1E fallback: deterministic random groups.
@@ -55,3 +53,20 @@ def mean_feature(rows: list[list[float]]) -> list[float]:
     if not rows:
         raise ValueError("Cannot build a prototype from an empty group")
     return l2_normalize([sum(values) / len(rows) for values in zip(*rows)])
+
+
+def select_diverse_medoids(rows: list[list[float]], count: int) -> list[int]:
+    if count <= 0:
+        return []
+    class_mean = mean_feature(rows)
+    mean_sims = cosine_similarity_matrix(rows, [class_mean])
+    selected = [min(range(len(rows)), key=lambda idx: (-mean_sims[idx][0], idx))]
+    sims = cosine_similarity_matrix(rows, rows)
+    while len(selected) < min(count, len(rows)):
+        candidates = [idx for idx in range(len(rows)) if idx not in selected]
+        next_idx = max(
+            candidates,
+            key=lambda idx: (1.0 - max(sims[idx][selected_idx] for selected_idx in selected), -idx),
+        )
+        selected.append(next_idx)
+    return selected

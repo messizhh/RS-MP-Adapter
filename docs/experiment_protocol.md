@@ -222,6 +222,43 @@ python3 scripts/check_rs_cpc_prototype_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/run_rs_cpc.py` is the cached training-free RS-CPC evaluation runner. It implements the compact multi-prototype cache adapter path: support image features from the shot split are compressed into class-wise prototypes, val/test image features are evaluated against those prototypes, standalone text features provide the zero-shot fusion term, and the runner writes a unique result directory under:
+
+```text
+results/raw/{dataset}/{backbone}/rs_cpc/shot_{shot}/M_{M}/{prototype_init}/seed_{seed}/{run_id}/
+```
+
+Legal cached RS-CPC combinations follow the adapter input plan and prototype preflight. `M` must be no larger than `shot`. `mean` is valid only for `M=1`. `random_group_mean` and `medoid` are valid when the requested row is ready and `M <= shot`. `kmeans` is reserved and rejected by the cached training-free runner until implemented.
+
+The runner confirms adapter input preflight readiness, confirms the exact `method=rs_cpc` shot-by-`M` row in the adapter input plan, and confirms the exact shot/`M`/`prototype_init` combination in the RS-CPC prototype preflight report. Prototype construction uses only the support cache: val/test caches are not used for prototype construction or hyperparameter selection.
+
+Cached RS-CPC evaluation computes fused logits, top-1 accuracy, per-split metrics, cache entries `C x M`, and efficiency metadata. It does not train, fine-tune, load CLIP/RemoteCLIP/GeoRSCLIP models, extract features, modify input caches, or save predictions unless `--save-predictions` is explicit. Local validation remains `is_paper_result: false` and is excluded from paper-facing tables; server modes also remain non-paper results unless `--allow-paper-result` is explicit.
+
+Example cached RS-CPC local validation command:
+
+```bash
+python3 scripts/run_rs_cpc.py \
+  --config configs/methods/rs_cpc.yaml \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --shot 4 \
+  --seed 1 \
+  --M 2 \
+  --prototype-init random_group_mean \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --base-split base_seed1 \
+  --shot-split shot_4_seed1 \
+  --text-feature-cache outputs/features/remoteclip_vit_b32/eurosat/base_seed1/text/20260512T140232/text_feature_cache.pt \
+  --adapter-input-plan outputs/preflight/adapter_input_plans/eurosat_remoteclip_vit_b32_seed1/20260512T070522/adapter_input_plan.json \
+  --preflight-report outputs/preflight/adapter_input/eurosat_remoteclip_vit_b32_seed1/adapter_input_preflight_report.json \
+  --prototype-preflight-report outputs/preflight/rs_cpc_prototypes/eurosat_remoteclip_vit_b32_seed1/rs_cpc_prototype_preflight_report.json \
+  --eval-splits val test \
+  --output-dir results/raw \
+  --device cpu \
+  --execution-env local_wsl \
+  --run-mode local_validation
+```
+
 ## Training-Free Method Validation
 
 Phase 1E method runners consume feature caches and can run on fake dry-run caches locally. Local runs must remain `execution_env: local_wsl`, `run_mode: smoke_test`, `device: cpu`, and `is_paper_result: false`.
