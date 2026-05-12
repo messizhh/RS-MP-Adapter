@@ -125,6 +125,23 @@ python3 scripts/run_zero_shot.py \
   --run-mode server_full
 ```
 
+`scripts/check_result_run_preflight.py` is a read-only consistency checker for an existing result run directory. It validates that `metrics.json`, `metadata.json`, a config snapshot, and `log.txt` exist, checks zero-shot-specific fields and metric shapes, and confirms local/debug runs stay excluded from paper-facing tables.
+
+This result preflight does not rerun evaluation, compute logits, recompute accuracy, train, delete files, or modify `metrics.json`/`metadata.json`. It writes only a separate report under `outputs/preflight/result_runs/...`.
+
+Example:
+
+```bash
+python3 scripts/check_result_run_preflight.py \
+  --run-dir results/raw/eurosat/remoteclip_vit_b32/zero_shot/seed_1/20260512T143328_5927f59b \
+  --expected-method zero_shot \
+  --expected-dataset eurosat \
+  --expected-backbone remoteclip_vit_b32 \
+  --output-dir outputs/preflight/result_runs \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
