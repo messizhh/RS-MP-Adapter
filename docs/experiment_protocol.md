@@ -51,6 +51,22 @@ python3 scripts/export_adapter_input_plan.py \
   --output-dir outputs/preflight/adapter_input_plans
 ```
 
+`scripts/check_rs_cpc_prototype_preflight.py` consumes the adapter input plan and source preflight report, then performs RS-CPC prototype construction shape checks only for `method=rs_cpc` rows where `is_ready=true`. It loads support feature caches, constructs temporary prototypes in memory for supported initialization modes, checks prototype shapes and label counts, and writes a JSON report under `outputs/preflight/rs_cpc_prototypes/...`.
+
+This prototype preflight is not an experiment result. It does not load models, use val/test for tuning or evaluation, compute image-to-prototype logits, compute accuracy, save predictions, save prototype tensors, or write `results/raw`. `kmeans` is reserved and may be reported as unsupported for this preflight without failing.
+
+Example:
+
+```bash
+python3 scripts/check_rs_cpc_prototype_preflight.py \
+  --adapter-input-plan outputs/preflight/adapter_input_plans/eurosat_remoteclip_vit_b32_seed1/20260512T070522/adapter_input_plan.json \
+  --preflight-report outputs/preflight/adapter_input/eurosat_remoteclip_vit_b32_seed1/adapter_input_preflight_report.json \
+  --prototype-inits mean random_group_mean medoid kmeans \
+  --output-dir outputs/preflight/rs_cpc_prototypes \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Training-Free Method Validation
 
 Phase 1E method runners consume feature caches and can run on fake dry-run caches locally. Local runs must remain `execution_env: local_wsl`, `run_mode: smoke_test`, `device: cpu`, and `is_paper_result: false`.
