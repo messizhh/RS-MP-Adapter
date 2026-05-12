@@ -35,6 +35,29 @@ python3 scripts/check_zero_shot_eval_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/check_text_feature_cache_preflight.py` checks the standalone text feature cache contract needed before cached zero-shot evaluation can run. It reads the feature-cache manifest and base split, verifies that `class_to_idx` gives a deterministic class order, loads prompt templates from `configs/methods/zero_shot_clip.yaml` or the built-in default, infers the expected feature dimension, and checks whether an independent text cache already exists under the proposed path:
+
+```text
+outputs/features/<backbone>/<dataset>/<base_split>/text/text_feature_cache.pt
+```
+
+This preflight recommends a separate text feature cache instead of writing `text_features` back into existing train/val/test image caches. It is an input-contract check only: it does not load models, extract text features, compute logits, compute accuracy, save predictions, train, evaluate, modify existing `feature_cache.pt` files, or write `results/raw`.
+
+The proposed text cache schema includes `text_features [num_classes, feature_dim]`, `class_names`, `class_to_idx`, prompts or prompt templates, dataset, backbone, base split, feature dimension, class count, normalization flag, source script, creation time, git commit, execution environment, run mode, and `is_paper_result: false`.
+
+Example:
+
+```bash
+python3 scripts/check_text_feature_cache_preflight.py \
+  --manifest outputs/manifests/feature_cache_after_seed1_support/feature_cache_manifest.json \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --base-split base_seed1 \
+  --output-dir outputs/preflight/text_features \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
