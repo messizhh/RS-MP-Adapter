@@ -224,6 +224,79 @@ class ExtractFeaturesTest(unittest.TestCase):
             self.assertFalse(cache.metadata["evaluates_model"])
             self.assertEqual(summary["feature_shape"], [2, 512])
 
+    def test_guarded_real_support_extraction_preserves_seed_shot_and_split_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            dataset_root = base / "dataset"
+            for class_name in ["class_a", "class_b"]:
+                make_image(dataset_root / class_name / "support.png")
+            split_path = base / "splits" / "eurosat" / "shot_1_seed2.json"
+            split_path.parent.mkdir(parents=True, exist_ok=True)
+            split_path.write_text(
+                json.dumps(
+                    {
+                        "dataset": "eurosat",
+                        "seed": 2,
+                        "shot": 1,
+                        "class_to_idx": {"class_a": 0, "class_b": 1},
+                        "support": [
+                            {"path": "class_a/support.png", "label": 0},
+                            {"path": "class_b/support.png", "label": 1},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            weights_path = base / "remoteclip.pt"
+            weights_path.write_bytes(b"placeholder\n")
+            backbone_config = {
+                "backbone": {
+                    "name": "remoteclip_vit_b32",
+                    "family": "remoteclip",
+                    "feature_dim": 512,
+                    "image_size": 224,
+                    "weights": None,
+                    "allow_download": False,
+                    "normalize_features": True,
+                }
+            }
+
+            with patched_remoteclip_modules(checkpoint={"state_dict": {"visual.proj": torch.ones(1)}}):
+                result = run_guarded_real_feature_extraction(
+                    dataset="eurosat",
+                    backbone_name="remoteclip_vit_b32",
+                    backbone_config=backbone_config,
+                    output_dir=base / "outputs" / "features",
+                    split_path=split_path,
+                    split_section="support",
+                    seed=2,
+                    shot=1,
+                    dataset_root=dataset_root,
+                    weights_path=weights_path,
+                    batch_size=1,
+                    device="cpu",
+                    execution_env="remote_server",
+                    run_mode="server_full",
+                    command="pytest guarded support metadata",
+                    is_paper_result_candidate=False,
+                )
+
+            cache = load_feature_cache(result["cache_path"])
+            summary = read_json(result["summary_path"])
+            for payload in [cache.metadata, summary]:
+                self.assertEqual(payload["seed"], 2)
+                self.assertEqual(payload["shot"], 1)
+                self.assertEqual(payload["split"], str(split_path))
+                self.assertEqual(payload["split_path"], str(split_path))
+                self.assertEqual(payload["split_id"], "shot_1_seed2")
+                self.assertEqual(payload["split_name"], "shot_1_seed2")
+                self.assertEqual(payload["split_file_stem"], "shot_1_seed2")
+                self.assertEqual(payload["split_section"], "support")
+                self.assertFalse(payload["is_paper_result"])
+                self.assertFalse(payload["eligible_for_paper_tables"])
+                self.assertFalse(payload["trains_model"])
+                self.assertFalse(payload["evaluates_model"])
+
     def test_guarded_real_extraction_applies_max_samples_before_encoding(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)

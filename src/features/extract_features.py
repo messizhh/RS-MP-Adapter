@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import shlex
 import subprocess
 import sys
@@ -118,6 +119,8 @@ def run_guarded_real_feature_extraction(
     output_dir: str | Path,
     split_path: str | Path,
     split_section: str,
+    seed: int | None = None,
+    shot: int | None = None,
     dataset_root: str | Path,
     weights_path: str | Path,
     batch_size: int,
@@ -154,6 +157,12 @@ def run_guarded_real_feature_extraction(
         split_path=Path(split_path),
         split_section=split_section,
         dataset_root=Path(dataset_root),
+    )
+    split_metadata = infer_split_metadata(
+        split_path=Path(split_path),
+        split_section=split_section,
+        explicit_seed=seed,
+        explicit_shot=shot,
     )
     image_count_before_limit = len(selected.image_paths)
     requested_max_samples = max_samples
@@ -232,6 +241,7 @@ def run_guarded_real_feature_extraction(
         "eligible_for_paper_tables": False,
         "dataset": dataset,
         "backbone": backbone_name,
+        **split_metadata,
         "split_path": str(split_path),
         "split_section": split_section,
         "image_count": image_count_after_limit,
@@ -381,6 +391,48 @@ def collect_split_images(*, split_path: Path, split_section: str, dataset_root: 
         image_paths.append(image_path if image_path.is_absolute() else dataset_root / image_path)
         labels.append(int(row.get("label", 0)))
     return SplitImageSelection(image_paths, labels, {str(key): int(value) for key, value in class_to_idx.items()})
+
+
+def infer_split_metadata(
+    *,
+    split_path: Path,
+    split_section: str,
+    explicit_seed: int | None,
+    explicit_shot: int | None,
+) -> dict[str, Any]:
+    split_id = canonical_split_id(split_path)
+    split_file_stem = split_path.stem
+    seed = explicit_seed if explicit_seed is not None else infer_seed_from_text(split_file_stem)
+    shot = explicit_shot if explicit_shot is not None else infer_shot_from_text(split_file_stem)
+    if split_section in {"train", "val", "test"}:
+        shot = None
+    return {
+        "seed": seed,
+        "shot": shot,
+        "split": str(split_path),
+        "split_id": split_id,
+        "split_name": split_id,
+        "split_file_stem": split_file_stem,
+        "base_split": split_id if split_id.startswith("base_") else None,
+    }
+
+
+def canonical_split_id(split_path: Path) -> str:
+    stem = split_path.stem
+    match = re.fullmatch(r"base_split_seed(\d+)", stem)
+    if match:
+        return f"base_seed{match.group(1)}"
+    return stem
+
+
+def infer_seed_from_text(value: str) -> int | None:
+    match = re.search(r"seed(\d+)", value)
+    return int(match.group(1)) if match else None
+
+
+def infer_shot_from_text(value: str) -> int | None:
+    match = re.search(r"shot_(\d+)", value)
+    return int(match.group(1)) if match else None
 
 
 def image_size_from_backbone_config(backbone_config: dict[str, Any]) -> int:

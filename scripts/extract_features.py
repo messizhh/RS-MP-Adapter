@@ -59,6 +59,8 @@ def main() -> None:
             output_dir=args.output_dir,
             split_path=args.split,
             split_section=args.split_section,
+            seed=args.seed,
+            shot=args.shot,
             dataset_root=dataset_root,
             weights_path=args.weights_path,
             batch_size=args.batch_size,

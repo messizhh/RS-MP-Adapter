@@ -105,6 +105,41 @@ class FeatureCacheManifestTest(unittest.TestCase):
                 sorted(["trains_model", "evaluates_model", "saves_predictions", "is_paper_result", "eligible_for_paper_tables"]),
             )
 
+    def test_manifest_preserves_seed_shot_and_split_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            features_root = root / "features"
+            write_summary(
+                features_root / "remoteclip_vit_b32" / "eurosat" / "support" / "run1",
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_section="support",
+                image_count=10,
+                checkpoint_loaded=True,
+                seed=2,
+                shot=1,
+                split="splits/eurosat/shot_1_seed2.json",
+                split_id="shot_1_seed2",
+                split_name="shot_1_seed2",
+            )
+
+            result = build_feature_cache_manifest(
+                features_root=features_root,
+                output_dir=root / "manifest",
+                execution_env="remote_server",
+                run_mode="local_validation",
+            )
+
+            manifest = read_json(result["manifest_json_path"])
+            entry = manifest["entries"][0]
+            self.assertEqual(entry["seed"], 2)
+            self.assertEqual(entry["shot"], 1)
+            self.assertEqual(entry["split"], "splits/eurosat/shot_1_seed2.json")
+            self.assertEqual(entry["split_id"], "shot_1_seed2")
+            self.assertEqual(entry["split_name"], "shot_1_seed2")
+            self.assertEqual(entry["split_path"], "splits/eurosat/shot_1_seed2.json")
+            self.assertEqual(entry["num_samples"], 10)
+
     def test_manifest_cli_writes_expected_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -155,16 +190,28 @@ def write_summary(
     is_paper_result: bool = False,
     eligible_for_paper_tables: bool = False,
     extracts_text_features: bool = False,
+    seed: int | None = None,
+    shot: int | None = None,
+    split: str | None = None,
+    split_id: str | None = None,
+    split_name: str | None = None,
 ) -> Path:
     path = run_dir / "feature_extraction_summary.json"
+    split_path = split or f"splits/{dataset}/base_split_seed1.json"
     safe_write_json(
         path,
         {
             "dataset": dataset,
             "backbone": backbone,
-            "split_path": f"splits/{dataset}/base_split_seed1.json",
+            "seed": seed,
+            "shot": shot,
+            "split": split_path,
+            "split_id": split_id,
+            "split_name": split_name,
+            "split_path": split_path,
             "split_section": split_section,
             "image_count": image_count,
+            "num_samples": image_count,
             "feature_shape": [image_count, 512],
             "feature_cache_path": str(run_dir / "feature_cache.pt"),
             "run_dir": str(run_dir),

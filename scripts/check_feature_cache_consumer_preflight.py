@@ -212,11 +212,26 @@ def resolve_entry_from_summary(entry: dict[str, Any], manifest_dir: Path) -> dic
 
 
 def entry_matches_split(entry: dict[str, Any], split_id: str) -> bool:
-    for key in ("summary_path", "run_dir", "feature_cache_path"):
+    requested_tokens = split_tokens(split_id)
+    for key in ("split_id", "split_name", "base_split", "split", "split_path", "summary_path", "run_dir", "feature_cache_path"):
         value = entry.get(key)
-        if isinstance(value, str) and split_id in Path(value).parts:
+        if not isinstance(value, str) or not value:
+            continue
+        path = Path(value)
+        value_tokens = {value, path.name, path.stem, *path.parts}
+        value_tokens.update(split_tokens(path.stem))
+        if requested_tokens & value_tokens:
             return True
     return False
+
+
+def split_tokens(split_id: str) -> set[str]:
+    tokens = {split_id}
+    if split_id.startswith("base_seed"):
+        tokens.add(split_id.replace("base_seed", "base_split_seed", 1))
+    if split_id.startswith("base_split_seed"):
+        tokens.add(split_id.replace("base_split_seed", "base_seed", 1))
+    return {token for token in tokens if token}
 
 
 def validate_entry(entry: dict[str, Any], *, dataset: str, backbone: str, errors: list[str]) -> None:

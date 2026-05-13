@@ -18,6 +18,10 @@ Feature extraction dry-runs write a feature cache and `feature_extraction_summar
 
 Use `scripts/validate_feature_cache.py` to validate cache schema and dimensions without modifying the original cache.
 
+Real feature extraction summaries must preserve downstream split identity metadata. Every `feature_extraction_summary.json` for image caches should include `seed`, `shot`, `split`, `split_id`, `split_name`, `split_path`, and `split_section` in addition to `image_count`, `num_samples`, and `feature_shape`. For base train/val/test caches, `shot` is `null` and base split ids such as `base_split_seed2.json` should be normalized or aliasable to `base_seed2`. For few-shot support caches, `split_id` and `split_name` must identify the exact support split, for example `shot_1_seed2` or `shot_16_seed2`.
+
+`scripts/build_feature_cache_manifest.py` must preserve these fields from each summary, and consumer preflights should prefer explicit `split_id`/`split_name`/`base_split` metadata over path guessing. Older summaries may still be matched through `split_path` when possible, but new server artifacts should not rely on directory names alone.
+
 `scripts/check_zero_shot_eval_preflight.py` checks whether cached zero-shot evaluation inputs are present for a base split. It reads the feature-cache manifest and train/val/test image caches, verifies image feature/label/path/class-map consistency, and checks text features either from a standalone `text_feature_cache.pt` or from legacy embedded text features in image caches.
 
 The preferred input contract is image features from val/test image caches plus text features from a standalone text feature cache. The standalone text cache is an input artifact, not an evaluation result, and must not be written back into train/val/test image `feature_cache.pt` files. For real cached zero-shot input readiness, dry-run or fake text caches are rejected.

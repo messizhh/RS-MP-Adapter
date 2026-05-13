@@ -16,9 +16,17 @@ MANIFEST_FIELDS = [
     "summary_path",
     "dataset",
     "backbone",
+    "seed",
+    "shot",
+    "split",
+    "split_id",
+    "split_name",
+    "split_file_stem",
+    "base_split",
     "split_path",
     "split_section",
     "image_count",
+    "num_samples",
     "feature_shape",
     "feature_cache_path",
     "run_dir",
@@ -124,6 +132,8 @@ def entry_from_summary(summary_path: Path) -> dict[str, Any]:
     entry["summary_path"] = str(summary_path)
     if entry.get("run_dir") is None:
         entry["run_dir"] = str(summary_path.parent)
+    if entry.get("num_samples") is None:
+        entry["num_samples"] = summary.get("image_count")
     return {field: entry.get(field) for field in MANIFEST_FIELDS}
 
 
