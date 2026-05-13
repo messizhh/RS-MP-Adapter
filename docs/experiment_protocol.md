@@ -160,6 +160,31 @@ python3 scripts/summarize_local_validation_results.py \
   --include-methods zero_shot tip_adapter proto_adapter rs_cpc
 ```
 
+`scripts/check_server_full_protocol_preflight.py` is a read-only protocol gate before formal `server_full` evaluation. It checks the planned dataset/backbone/seed/shot/method matrix, required feature-cache manifests, val/test image caches, support caches, standalone real text caches, adapter input preflights, adapter input plans, and RS-CPC prototype preflight reports.
+
+This protocol preflight does not run experiments, compute logits, recompute accuracy, train, modify existing result files, delete result files, write `results/raw`, or generate paper-facing tables. It separates completed `local_validation` work from future paper-facing server runs. `server_full` does not automatically mean `is_paper_result=true`; formal evaluation commands must explicitly pass `--allow-paper-result`, and the artifact matrix must be complete before any result can be treated as paper-facing.
+
+Example:
+
+```bash
+python3 scripts/check_server_full_protocol_preflight.py \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --seeds 1 2 3 \
+  --shots 1 2 4 8 16 \
+  --methods zero_shot tip_adapter proto_adapter rs_cpc \
+  --rs-cpc-prototype-inits mean random_group_mean medoid \
+  --rs-cpc-M-values 1 2 4 8 \
+  --manifest-template 'outputs/manifests/feature_cache_after_seed{seed}_support/feature_cache_manifest.json' \
+  --text-cache-template 'outputs/features/{backbone}/{dataset}/base_seed{seed}/{dataset}/{backbone}/text/*/text_feature_cache.pt' \
+  --adapter-plan-template 'outputs/preflight/adapter_input_plans/{dataset}_{backbone}_seed{seed}/*/adapter_input_plan.json' \
+  --adapter-preflight-template 'outputs/preflight/adapter_input/{dataset}_{backbone}_seed{seed}/adapter_input_preflight_report.json' \
+  --prototype-preflight-template 'outputs/preflight/rs_cpc_prototypes/{dataset}_{backbone}_seed{seed}/*/rs_cpc_prototype_preflight_report.json' \
+  --output-dir outputs/preflight/server_full_protocol \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
