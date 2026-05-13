@@ -203,6 +203,24 @@ python3 scripts/export_seed_expansion_plan.py \
   --run-mode local_validation
 ```
 
+`scripts/export_seed_execution_command_pack.py` reads a seed expansion plan and exports a per-seed command pack for manual review. The command pack is not an execution script: the generated shell file exits immediately before the command templates, and the commands contain TODO placeholders for server-specific roots, weights, timestamps, and preflight report paths.
+
+This command pack must not be run blindly. It does not generate splits, extract image features, extract text features, evaluate methods, train models, compute logits, compute accuracy, write `results/raw`, modify existing metrics/metadata, or mark anything as a paper result. It is a review artifact to help the user prepare remote-server commands safely.
+
+Example:
+
+```bash
+python3 scripts/export_seed_execution_command_pack.py \
+  --seed-expansion-plan outputs/analysis/seed_expansion_plans/eurosat_remoteclip_vit_b32_seed2_seed3/20260513T030413/seed_expansion_plan.json \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --seed 2 \
+  --shots 1 2 4 8 16 \
+  --output-dir outputs/analysis/seed_execution_command_packs \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
