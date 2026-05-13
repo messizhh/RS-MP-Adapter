@@ -185,6 +185,24 @@ python3 scripts/check_server_full_protocol_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/export_seed_expansion_plan.py` reads a server_full protocol preflight report and exports a seed expansion plan for missing seed artifacts. It is a planning artifact only: it does not generate splits, extract image features, extract text features, run adapter or RS-CPC evaluation, train, compute logits, compute accuracy, modify existing result files, or write `results/raw`.
+
+The plan groups work by seed and phase: dataset/split readiness, image feature cache manifest and support caches, standalone text feature cache, adapter input preflight, adapter input plan, RS-CPC prototype preflight, and rerunning the server_full protocol preflight. Suggested commands are templates with TODO placeholders where server paths or exact command choices must be verified before manual execution.
+
+Example:
+
+```bash
+python3 scripts/export_seed_expansion_plan.py \
+  --server-full-preflight-report outputs/preflight/server_full_protocol/eurosat_remoteclip_vit_b32/20260513T025500/server_full_protocol_preflight_report.json \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --target-seeds 2 3 \
+  --shots 1 2 4 8 16 \
+  --output-dir outputs/analysis/seed_expansion_plans \
+  --execution-env remote_server \
+  --run-mode local_validation
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
