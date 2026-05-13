@@ -144,6 +144,22 @@ python3 scripts/check_result_run_preflight.py \
   --run-mode local_validation
 ```
 
+`scripts/summarize_local_validation_results.py` is an analysis-only read-only summarizer for existing cached local validation runs under `results/raw`. It reads each candidate run's `metrics.json` and `metadata.json`, filters to `run_mode=local_validation`, `is_paper_result=false`, `eligible_for_paper_tables=false`, and the requested dataset/backbone/seed, then writes a timestamped summary under `outputs/analysis/local_validation_summaries/...`.
+
+The local validation summary is not a paper table. It does not run evaluation, compute logits, recompute accuracy, train, modify existing result files, delete result files, or write `results/raw`. If multiple runs exist for the same method/shot/`M`/prototype-init combination, the latest run is selected and the number of candidate runs is recorded.
+
+Example:
+
+```bash
+python3 scripts/summarize_local_validation_results.py \
+  --results-root results/raw \
+  --dataset eurosat \
+  --backbone remoteclip_vit_b32 \
+  --seed 1 \
+  --output-dir outputs/analysis/local_validation_summaries \
+  --include-methods zero_shot tip_adapter proto_adapter rs_cpc
+```
+
 ## Adapter Input Preflight
 
 `scripts/check_adapter_input_preflight.py` is a read-only preflight for cached-feature adapter inputs. It checks that a feature-cache manifest contains the requested base train/val/test caches and shot support caches, validates cache fields and tensor/list shapes, verifies label/class consistency, and reports expected cache entries for Tip-Adapter, Proto-Adapter, and RS-CPC.
