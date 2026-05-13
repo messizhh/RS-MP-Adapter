@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.features.feature_cache import shape_of_2d
 from src.utils.io import read_json, safe_write_json
 from src.utils.timing import utc_now_iso
+from scripts.build_feature_cache_manifest import select_preferred_manifest_entry
 
 
 BASE_SECTIONS = ["train", "val", "test"]
@@ -83,21 +84,40 @@ def run_feature_cache_consumer_preflight(
     selected_entries = [
         entry for entry in resolved_entries if entry.get("dataset") == dataset and entry.get("backbone") == backbone
     ]
-    entries_by_split = {
-        split_id: [entry for entry in selected_entries if entry_matches_split(entry, split_id)]
-        for split_id in [base_split, *shot_splits]
-    }
 
-    found_base_sections = {
-        str(entry.get("split_section"))
-        for entry in entries_by_split.get(base_split, [])
-        if entry.get("split_section") in BASE_SECTIONS
-    }
-    required_base_sections_found = [section for section in BASE_SECTIONS if section in found_base_sections]
+    base_entries_by_section: dict[str, dict[str, Any] | None] = {}
+    for section in BASE_SECTIONS:
+        matches = [
+            entry
+            for entry in selected_entries
+            if entry.get("split_section") == section and entry_matches_split(entry, base_split)
+        ]
+        base_entries_by_section[section] = select_consumer_entry(
+            matches,
+            context=f"{base_split}:{section}",
+            warnings=warnings,
+            errors=errors,
+        )
+
+    support_entries_by_split: dict[str, dict[str, Any] | None] = {}
+    for split_id in shot_splits:
+        matches = [
+            entry
+            for entry in selected_entries
+            if entry.get("split_section") == "support" and entry_matches_split(entry, split_id)
+        ]
+        support_entries_by_split[split_id] = select_consumer_entry(
+            matches,
+            context=f"{split_id}:support",
+            warnings=warnings,
+            errors=errors,
+        )
+
+    required_base_sections_found = [section for section in BASE_SECTIONS if base_entries_by_section.get(section) is not None]
     required_support_splits_found = [
         split_id
         for split_id in shot_splits
-        if any(entry.get("split_section") == "support" for entry in entries_by_split.get(split_id, []))
+        if support_entries_by_split.get(split_id) is not None
     ]
 
     for section in BASE_SECTIONS:
@@ -109,13 +129,13 @@ def run_feature_cache_consumer_preflight(
 
     required_entries = [
         entry
-        for entry in entries_by_split.get(base_split, [])
-        if entry.get("split_section") in BASE_SECTIONS
+        for entry in base_entries_by_section.values()
+        if entry is not None
     ]
     for split_id in shot_splits:
-        required_entries.extend(
-            entry for entry in entries_by_split.get(split_id, []) if entry.get("split_section") == "support"
-        )
+        entry = support_entries_by_split.get(split_id)
+        if entry is not None:
+            required_entries.append(entry)
 
     cache_inspections: dict[str, dict[str, Any]] = {}
     for entry in required_entries:
@@ -141,8 +161,9 @@ def run_feature_cache_consumer_preflight(
         errors.append("could not infer num_classes from feature cache metadata")
     else:
         for split_id in shot_splits:
-            support_entries = [entry for entry in entries_by_split.get(split_id, []) if entry.get("split_section") == "support"]
-            support_count = sum_int(entry.get("image_count") for entry in support_entries)
+            support_entry = support_entries_by_split.get(split_id)
+            support_count = int_or_none(support_entry.get("image_count")) if support_entry is not None else 0
+            support_count = support_count or 0
             support_counts_by_shot[split_id] = support_count
             shot = shot_from_split_id(split_id)
             if shot is None:
@@ -209,6 +230,24 @@ def resolve_entry_from_summary(entry: dict[str, Any], manifest_dir: Path) -> dic
     if not resolved.get("run_dir"):
         resolved["run_dir"] = str(summary_path.parent)
     return resolved
+
+
+def select_consumer_entry(
+    matches: list[dict[str, Any]], *, context: str, warnings: list[str], errors: list[str]
+) -> dict[str, Any] | None:
+    if not matches:
+        return None
+    if any(has_value(entry.get("shard_id")) for entry in matches):
+        errors.append(f"{context} has sharded feature cache entries, but shard merging is not supported by this preflight")
+        return None
+    selected = select_preferred_manifest_entry(matches)
+    if len(matches) > 1:
+        ignored = [str(entry.get("summary_path") or entry.get("feature_cache_path") or "") for entry in matches if entry is not selected]
+        warnings.append(
+            f"{context} has {len(matches)} matching manifest entries; "
+            f"using {selected.get('summary_path')} and ignoring duplicates: {ignored}"
+        )
+    return selected
 
 
 def entry_matches_split(entry: dict[str, Any], split_id: str) -> bool:
@@ -337,6 +376,10 @@ def int_or_none(value: Any) -> int | None:
     if isinstance(value, float):
         return int(value)
     return None
+
+
+def has_value(value: Any) -> bool:
+    return value is not None and value != ""
 
 
 def sum_int(values: Any) -> int:

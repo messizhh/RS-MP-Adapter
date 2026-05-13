@@ -199,6 +199,135 @@ class FeatureCacheConsumerPreflightTest(unittest.TestCase):
             self.assertFalse(report["trains_model"])
             self.assertFalse(report["evaluates_model"])
 
+    def test_consumer_preflight_does_not_double_count_duplicate_seed2_support_caches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset = "eurosat"
+            backbone = "remoteclip_vit_b32"
+            num_classes = 10
+            entries = []
+            for section, count in [("train", 20), ("val", 10), ("test", 10)]:
+                entries.append(
+                    write_generic_summary_and_cache(
+                        root,
+                        dataset=dataset,
+                        backbone=backbone,
+                        split_id=None,
+                        split_name=None,
+                        split_path="splits/eurosat/base_split_seed2.json",
+                        split_section=section,
+                        image_count=count,
+                        num_classes=num_classes,
+                        run_key=f"old_base_{section}",
+                        seed=None,
+                        shot=None,
+                        start_time="2026-05-12T00:00:00+00:00",
+                        end_time="2026-05-12T00:01:00+00:00",
+                    )
+                )
+                entries.append(
+                    write_generic_summary_and_cache(
+                        root,
+                        dataset=dataset,
+                        backbone=backbone,
+                        split_id="base_seed2",
+                        split_name="base_seed2",
+                        split_path="splits/eurosat/base_split_seed2.json",
+                        split_section=section,
+                        image_count=count,
+                        num_classes=num_classes,
+                        run_key=f"new_base_{section}",
+                        seed=2,
+                        shot=None,
+                        base_split="base_seed2",
+                        start_time="2026-05-13T00:00:00+00:00",
+                        end_time="2026-05-13T00:01:00+00:00",
+                    )
+                )
+            for shot in [1, 2, 4, 8, 16]:
+                split_id = f"shot_{shot}_seed2"
+                entries.append(
+                    write_generic_summary_and_cache(
+                        root,
+                        dataset=dataset,
+                        backbone=backbone,
+                        split_id=None,
+                        split_name=None,
+                        split_path=f"splits/eurosat/{split_id}.json",
+                        split_section="support",
+                        image_count=shot * num_classes,
+                        num_classes=num_classes,
+                        run_key=f"old_support_{shot}",
+                        seed=None,
+                        shot=None,
+                        start_time="2026-05-12T00:00:00+00:00",
+                        end_time="2026-05-12T00:01:00+00:00",
+                    )
+                )
+                entries.append(
+                    write_generic_summary_and_cache(
+                        root,
+                        dataset=dataset,
+                        backbone=backbone,
+                        split_id=split_id,
+                        split_name=split_id,
+                        split_path=f"splits/eurosat/{split_id}.json",
+                        split_section="support",
+                        image_count=shot * num_classes,
+                        num_classes=num_classes,
+                        run_key=f"new_support_{shot}",
+                        seed=2,
+                        shot=shot,
+                        start_time="2026-05-13T00:00:00+00:00",
+                        end_time="2026-05-13T00:01:00+00:00",
+                    )
+                )
+            manifest_path = root / "manifest" / "feature_cache_manifest.json"
+            safe_write_json(manifest_path, {"entries": entries})
+
+            report_path, is_valid = run_feature_cache_consumer_preflight(
+                manifest_path=manifest_path,
+                dataset=dataset,
+                backbone=backbone,
+                base_split="base_seed2",
+                shot_splits=["shot_1_seed2", "shot_2_seed2", "shot_4_seed2", "shot_8_seed2", "shot_16_seed2"],
+                output_dir=root / "preflight",
+                execution_env="remote_server",
+                run_mode="local_validation",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertEqual(report["errors"], [])
+            self.assertEqual(report["required_base_sections_found"], ["train", "val", "test"])
+            self.assertEqual(
+                report["required_support_splits_found"],
+                ["shot_1_seed2", "shot_2_seed2", "shot_4_seed2", "shot_8_seed2", "shot_16_seed2"],
+            )
+            self.assertEqual(
+                report["support_counts_by_shot"],
+                {
+                    "shot_1_seed2": 10,
+                    "shot_2_seed2": 20,
+                    "shot_4_seed2": 40,
+                    "shot_8_seed2": 80,
+                    "shot_16_seed2": 160,
+                },
+            )
+            self.assertEqual(report["num_entries_checked"], 8)
+            self.assertEqual(report["total_images_checked"], 350)
+            self.assertTrue(any("matching manifest entries" in warning for warning in report["warnings"]))
+            self.assertFalse(report["loads_model"])
+            self.assertFalse(report["extracts_features"])
+            self.assertFalse(report["trains_model"])
+            self.assertFalse(report["evaluates_model"])
+            self.assertFalse(report["computes_logits"])
+            self.assertFalse(report["computes_accuracy"])
+            self.assertFalse(report["saves_predictions"])
+            self.assertFalse(report["saves_logits"])
+            self.assertFalse(report["is_paper_result"])
+            self.assertFalse(report["eligible_for_paper_tables"])
+
     def test_consumer_preflight_matches_older_summary_by_split_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -402,6 +531,9 @@ def write_generic_summary_and_cache(
     run_key: str,
     seed: int | None,
     shot: int | None,
+    base_split: str | None = None,
+    start_time: str = "2026-05-13T00:00:00+00:00",
+    end_time: str = "2026-05-13T00:01:00+00:00",
 ) -> dict[str, str]:
     run_dir = root / "generic_features" / run_key / "run"
     cache_path = run_dir / "feature_cache.pt"
@@ -435,6 +567,7 @@ def write_generic_summary_and_cache(
             "split": split_path,
             "split_id": split_id,
             "split_name": split_name,
+            "base_split": base_split,
             "split_path": split_path,
             "split_section": split_section,
             "image_count": image_count,
@@ -462,8 +595,8 @@ def write_generic_summary_and_cache(
             "extracts_text_features": False,
             "saves_predictions": False,
             "saves_logits": False,
-            "start_time": "2026-05-13T00:00:00+00:00",
-            "end_time": "2026-05-13T00:01:00+00:00",
+            "start_time": start_time,
+            "end_time": end_time,
             "total_time_sec": 60.0,
         },
     )

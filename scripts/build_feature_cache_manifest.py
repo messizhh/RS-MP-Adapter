@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,9 @@ WARNING_FLAGS = [
     "is_paper_result",
     "eligible_for_paper_tables",
 ]
+SPLIT_SECTION_NAMES = {"train", "val", "test", "support"}
+SHOT_SPLIT_RE = re.compile(r"shot_(\d+)_seed(\d+)")
+BASE_SPLIT_RE = re.compile(r"base(?:_split)?_seed(\d+)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,8 +107,15 @@ def build_feature_cache_manifest(
         raise NotADirectoryError(f"features root is not a directory: {root}")
 
     summary_paths = sorted(root.rglob("feature_extraction_summary.json"))
-    entries = [entry_from_summary(path) for path in summary_paths]
-    summary = summarize_manifest_entries(entries, execution_env=execution_env, run_mode=run_mode, features_root=root)
+    raw_entries = [entry_from_summary(path) for path in summary_paths]
+    entries, ignored_stale_entries = deduplicate_manifest_entries(raw_entries)
+    summary = summarize_manifest_entries(
+        entries,
+        ignored_stale_entries=ignored_stale_entries,
+        execution_env=execution_env,
+        run_mode=run_mode,
+        features_root=root,
+    )
 
     destination = Path(output_dir)
     manifest_json_path = safe_write_json(destination / "feature_cache_manifest.json", {"entries": entries}, overwrite=overwrite)
@@ -137,9 +148,208 @@ def entry_from_summary(summary_path: Path) -> dict[str, Any]:
     return {field: entry.get(field) for field in MANIFEST_FIELDS}
 
 
+def deduplicate_manifest_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for entry in entries:
+        grouped.setdefault(manifest_logical_key(entry), []).append(entry)
+
+    kept_entries: list[dict[str, Any]] = []
+    ignored_entries: list[dict[str, Any]] = []
+    for logical_key, group in grouped.items():
+        selected = select_preferred_manifest_entry(group)
+        kept_entries.append(selected)
+        if len(group) <= 1:
+            continue
+        for entry in group:
+            if entry is selected:
+                continue
+            ignored_entries.append(stale_entry_record(entry, selected, logical_key))
+
+    return (
+        sorted(kept_entries, key=lambda entry: str(entry.get("summary_path") or "")),
+        sorted(ignored_entries, key=lambda entry: str(entry.get("summary_path") or "")),
+    )
+
+
+def select_preferred_manifest_entry(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    if not entries:
+        raise ValueError("cannot select a preferred manifest entry from an empty list")
+    return max(entries, key=entry_priority_key)
+
+
+def entry_priority_key(entry: dict[str, Any]) -> tuple[int, int, int, str, str]:
+    return (
+        int(is_valid_feature_summary(entry)),
+        int(has_explicit_split_identity(entry)),
+        metadata_completeness_score(entry),
+        newest_timestamp(entry),
+        str(entry.get("summary_path") or ""),
+    )
+
+
+def manifest_logical_key(entry: dict[str, Any]) -> tuple[str, str, str, str]:
+    identity = canonical_split_identity(entry)
+    if identity is None:
+        identity = f"summary:{entry.get('summary_path') or id(entry)}"
+    return (
+        normalized_text(entry.get("dataset"), "__missing_dataset__"),
+        normalized_text(entry.get("backbone"), "__missing_backbone__"),
+        canonical_split_section(entry),
+        identity,
+    )
+
+
+def canonical_split_section(entry: dict[str, Any]) -> str:
+    section = entry.get("split_section")
+    if isinstance(section, str) and section in SPLIT_SECTION_NAMES:
+        return section
+    for key in ("summary_path", "run_dir", "feature_cache_path"):
+        value = entry.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        path = Path(value)
+        for part in path.parts:
+            if part in SPLIT_SECTION_NAMES:
+                return part
+    return normalized_text(section, "__missing_section__")
+
+
+def canonical_split_identity(entry: dict[str, Any]) -> str | None:
+    for key in ("base_split", "split_id", "split_name", "split_file_stem"):
+        identity = split_identity_from_value(entry.get(key), allow_plain=True)
+        if identity:
+            return identity
+    for key in ("split", "split_path", "summary_path", "run_dir", "feature_cache_path"):
+        identity = split_identity_from_value(entry.get(key), allow_plain=False)
+        if identity:
+            return identity
+    return None
+
+
+def has_explicit_split_identity(entry: dict[str, Any]) -> bool:
+    return any(
+        split_identity_from_value(entry.get(key), allow_plain=True)
+        for key in ("base_split", "split_id", "split_name", "split_file_stem")
+    )
+
+
+def split_identity_from_value(value: Any, *, allow_plain: bool) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    path = Path(text)
+    candidates = [text, path.name, path.stem, *path.parts]
+    for candidate in candidates:
+        shot_match = SHOT_SPLIT_RE.search(candidate)
+        if shot_match:
+            return f"shot_{shot_match.group(1)}_seed{shot_match.group(2)}"
+        base_match = BASE_SPLIT_RE.search(candidate)
+        if base_match:
+            return f"base_seed{base_match.group(1)}"
+    if not allow_plain:
+        return None
+    token = path.stem if path.suffix or "/" in text or "\\" in text else text
+    token = token.strip()
+    if not token or token in SPLIT_SECTION_NAMES:
+        return None
+    return token
+
+
+def metadata_completeness_score(entry: dict[str, Any]) -> int:
+    fields = [
+        "dataset",
+        "backbone",
+        "seed",
+        "shot",
+        "split",
+        "split_id",
+        "split_name",
+        "split_file_stem",
+        "base_split",
+        "split_path",
+        "split_section",
+        "image_count",
+        "num_samples",
+        "feature_shape",
+        "feature_cache_path",
+        "run_dir",
+        "checkpoint_loaded",
+        "final_weights_loaded_from_checkpoint",
+        "missing_keys_count",
+        "unexpected_keys_count",
+    ]
+    return sum(1 for field in fields if has_value(entry.get(field)))
+
+
+def is_valid_feature_summary(entry: dict[str, Any]) -> bool:
+    image_count = int_or_none(entry.get("image_count"))
+    shape = feature_shape(entry.get("feature_shape"))
+    if image_count is None or image_count < 0:
+        return False
+    if shape and (len(shape) != 2 or shape[0] != image_count):
+        return False
+    return True
+
+
+def newest_timestamp(entry: dict[str, Any]) -> str:
+    values = [
+        str(entry.get(field))
+        for field in ("end_time", "start_time", "created_at")
+        if isinstance(entry.get(field), str) and entry.get(field)
+    ]
+    return max(values) if values else ""
+
+
+def stale_entry_record(
+    entry: dict[str, Any], selected: dict[str, Any], logical_key: tuple[str, str, str, str]
+) -> dict[str, Any]:
+    reason = "duplicate_logical_key_lower_priority"
+    if not has_explicit_split_identity(entry) and has_explicit_split_identity(selected):
+        reason = "duplicate_without_explicit_split_metadata"
+    return {
+        "summary_path": entry.get("summary_path"),
+        "selected_summary_path": selected.get("summary_path"),
+        "dataset": entry.get("dataset"),
+        "backbone": entry.get("backbone"),
+        "split_section": entry.get("split_section"),
+        "split_identity": logical_key[3],
+        "logical_key": list(logical_key),
+        "image_count": entry.get("image_count"),
+        "selected_image_count": selected.get("image_count"),
+        "reason": reason,
+    }
+
+
+def normalized_text(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value:
+        return value
+    return fallback
+
+
+def has_value(value: Any) -> bool:
+    return value is not None and value != ""
+
+
+def feature_shape(value: Any) -> list[int]:
+    if isinstance(value, (list, tuple)):
+        return [int(item) for item in value if isinstance(item, (int, float))]
+    return []
+
+
+def int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
+
+
 def summarize_manifest_entries(
     entries: list[dict[str, Any]],
     *,
+    ignored_stale_entries: list[dict[str, Any]],
     execution_env: str,
     run_mode: str,
     features_root: Path,
@@ -161,6 +371,9 @@ def summarize_manifest_entries(
 
     return {
         "num_entries": len(entries),
+        "deduplication_enabled": True,
+        "num_ignored_stale_entries": len(ignored_stale_entries),
+        "ignored_stale_entries": ignored_stale_entries,
         "datasets": sorted({str(entry.get("dataset")) for entry in entries if entry.get("dataset") is not None}),
         "backbones": sorted({str(entry.get("backbone")) for entry in entries if entry.get("backbone") is not None}),
         "split_sections": sorted(

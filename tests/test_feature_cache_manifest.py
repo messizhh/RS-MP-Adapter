@@ -140,6 +140,107 @@ class FeatureCacheManifestTest(unittest.TestCase):
             self.assertEqual(entry["split_path"], "splits/eurosat/shot_1_seed2.json")
             self.assertEqual(entry["num_samples"], 10)
 
+    def test_manifest_deduplicates_seed2_like_feature_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            features_root = root / "features"
+            dataset = "eurosat"
+            backbone = "remoteclip_vit_b32"
+            base_counts = {"train": 16200, "val": 5400, "test": 5400}
+
+            for section, image_count in base_counts.items():
+                write_summary(
+                    features_root / backbone / dataset / "base_seed2" / section / "old",
+                    dataset=dataset,
+                    backbone=backbone,
+                    split_section=section,
+                    image_count=image_count,
+                    checkpoint_loaded=True,
+                    split="splits/eurosat/base_split_seed2.json",
+                    start_time="2026-05-12T00:00:00+00:00",
+                    end_time="2026-05-12T00:01:00+00:00",
+                )
+                write_summary(
+                    features_root / backbone / dataset / "base_seed2" / section / "new",
+                    dataset=dataset,
+                    backbone=backbone,
+                    split_section=section,
+                    image_count=image_count,
+                    checkpoint_loaded=True,
+                    seed=2,
+                    shot=None,
+                    split="splits/eurosat/base_split_seed2.json",
+                    split_id="base_seed2",
+                    split_name="base_seed2",
+                    base_split="base_seed2",
+                    start_time="2026-05-13T00:00:00+00:00",
+                    end_time="2026-05-13T00:01:00+00:00",
+                )
+
+            for shot, image_count in [(1, 10), (2, 20), (4, 40), (8, 80), (16, 160)]:
+                split_id = f"shot_{shot}_seed2"
+                split_path = f"splits/eurosat/{split_id}.json"
+                write_summary(
+                    features_root / backbone / dataset / split_id / "support" / "old",
+                    dataset=dataset,
+                    backbone=backbone,
+                    split_section="support",
+                    image_count=image_count,
+                    checkpoint_loaded=True,
+                    split=split_path,
+                    start_time="2026-05-12T00:00:00+00:00",
+                    end_time="2026-05-12T00:01:00+00:00",
+                )
+                write_summary(
+                    features_root / backbone / dataset / split_id / "support" / "new",
+                    dataset=dataset,
+                    backbone=backbone,
+                    split_section="support",
+                    image_count=image_count,
+                    checkpoint_loaded=True,
+                    seed=2,
+                    shot=shot,
+                    split=split_path,
+                    split_id=split_id,
+                    split_name=split_id,
+                    start_time="2026-05-13T00:00:00+00:00",
+                    end_time="2026-05-13T00:01:00+00:00",
+                )
+
+            result = build_feature_cache_manifest(
+                features_root=features_root,
+                output_dir=root / "manifest",
+                execution_env="remote_server",
+                run_mode="local_validation",
+            )
+
+            manifest = read_json(result["manifest_json_path"])
+            summary = read_json(result["manifest_summary_path"])
+            self.assertEqual(len(manifest["entries"]), 8)
+            self.assertEqual(summary["num_entries"], 8)
+            self.assertEqual(summary["total_images"], 27310)
+            self.assertTrue(summary["deduplication_enabled"])
+            self.assertEqual(summary["num_ignored_stale_entries"], 8)
+            self.assertEqual(len(summary["ignored_stale_entries"]), 8)
+            self.assertTrue(
+                all(item["reason"] == "duplicate_without_explicit_split_metadata" for item in summary["ignored_stale_entries"])
+            )
+
+            support_entries = {entry["split_id"]: entry for entry in manifest["entries"] if entry["split_section"] == "support"}
+            self.assertEqual(
+                {key: entry["image_count"] for key, entry in support_entries.items()},
+                {
+                    "shot_1_seed2": 10,
+                    "shot_2_seed2": 20,
+                    "shot_4_seed2": 40,
+                    "shot_8_seed2": 80,
+                    "shot_16_seed2": 160,
+                },
+            )
+            base_entries = {entry["split_section"]: entry for entry in manifest["entries"] if entry["split_section"] in base_counts}
+            self.assertEqual({section: entry["image_count"] for section, entry in base_entries.items()}, base_counts)
+            self.assertTrue(all(entry["seed"] == 2 for entry in manifest["entries"]))
+
     def test_manifest_cli_writes_expected_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -195,6 +296,9 @@ def write_summary(
     split: str | None = None,
     split_id: str | None = None,
     split_name: str | None = None,
+    base_split: str | None = None,
+    start_time: str = "2026-05-07T00:00:00+00:00",
+    end_time: str = "2026-05-07T00:01:00+00:00",
 ) -> Path:
     path = run_dir / "feature_extraction_summary.json"
     split_path = split or f"splits/{dataset}/base_split_seed1.json"
@@ -208,6 +312,7 @@ def write_summary(
             "split": split_path,
             "split_id": split_id,
             "split_name": split_name,
+            "base_split": base_split,
             "split_path": split_path,
             "split_section": split_section,
             "image_count": image_count,
@@ -235,8 +340,8 @@ def write_summary(
             "extracts_text_features": extracts_text_features,
             "saves_predictions": saves_predictions,
             "saves_logits": False,
-            "start_time": "2026-05-07T00:00:00+00:00",
-            "end_time": "2026-05-07T00:01:00+00:00",
+            "start_time": start_time,
+            "end_time": end_time,
             "total_time_sec": 60.0,
         },
     )
