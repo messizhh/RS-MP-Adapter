@@ -215,6 +215,10 @@ python3 scripts/export_seed_expansion_plan.py \
 
 This command pack must not be run blindly. It does not generate splits, extract image features, extract text features, evaluate methods, train models, compute logits, compute accuracy, write `results/raw`, modify existing metrics/metadata, or mark anything as a paper result. It is a review artifact to help the user prepare remote-server commands safely.
 
+`scripts/export_server_full_evaluation_command_pack.py` reads a ready `server_full` protocol preflight report and exports a review-only formal evaluation command pack under `outputs/analysis/server_full_command_packs/...`. The exporter itself does not run zero-shot, Tip-Adapter, Proto-Adapter, or RS-CPC evaluation; it does not train, compute logits, compute accuracy, write `results/raw`, modify existing metrics/metadata, or mark anything as a paper result.
+
+The generated shell pack is intentionally not directly executable: it prints a review warning and exits before the command block. The command rows may contain future evaluation commands with `--run-mode server_full` and `--output-dir results/raw`, but `server_full` is a protocol/run mode, not automatically a paper result. The exporter does not add `--allow-paper-result`; paper-facing use requires an explicit allow flag in a separately reviewed run command and a post-run result preflight before any table export or paper-facing claim.
+
 Example:
 
 ```bash
