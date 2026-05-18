@@ -98,12 +98,18 @@ def run_text_feature_cache_preflight(
     proposed_text_feature_cache_path = (
         base_feature_dir / "text" / "text_feature_cache.pt"
         if base_feature_dir is not None
-        else Path("outputs") / "features" / backbone / dataset / base_request["split_id"] / "text" / "text_feature_cache.pt"
+        else Path("outputs") / "features" / dataset / backbone / "text" / "text_feature_cache.pt"
     )
     text_cache_candidates = find_text_feature_cache_candidates(
         entries=selected_entries,
         base_request=base_request,
         proposed_path=proposed_text_feature_cache_path,
+        additional_text_dirs=legacy_text_feature_dirs(
+            base_feature_dir=base_feature_dir,
+            dataset=dataset,
+            backbone=backbone,
+            base_split_id=base_request["split_id"],
+        ),
     )
     candidate_summaries = summarize_text_feature_cache_candidates(
         candidates=text_cache_candidates,
@@ -373,14 +379,16 @@ def find_text_feature_cache_candidates(
     entries: list[dict[str, Any]],
     base_request: dict[str, Any],
     proposed_path: Path,
+    additional_text_dirs: list[Path] | None = None,
 ) -> list[Path]:
     candidates: list[Path] = []
     if proposed_path.exists():
         candidates.append(proposed_path)
-    text_dir = proposed_path.parent
-    if text_dir.exists() and text_dir.is_dir():
-        for pattern in ("text_feature_cache.pt", "feature_cache.pt", "*.pt"):
-            candidates.extend(sorted(text_dir.rglob(pattern)))
+    text_dirs = [proposed_path.parent, *(additional_text_dirs or [])]
+    for text_dir in text_dirs:
+        if text_dir.exists() and text_dir.is_dir():
+            for pattern in ("text_feature_cache.pt", "feature_cache.pt", "*.pt"):
+                candidates.extend(sorted(text_dir.rglob(pattern)))
     for entry in entries:
         if not entry_matches_request(entry, base_request) and not path_mentions_text(entry):
             continue
@@ -392,6 +400,31 @@ def find_text_feature_cache_candidates(
                 candidates.append(path)
     unique: list[Path] = []
     seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve() if candidate.exists() else candidate)
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def legacy_text_feature_dirs(
+    *,
+    base_feature_dir: Path | None,
+    dataset: str,
+    backbone: str,
+    base_split_id: str,
+) -> list[Path]:
+    if base_feature_dir is None:
+        return []
+    candidates = []
+    if base_feature_dir.name == backbone and base_feature_dir.parent.name == dataset:
+        features_root = base_feature_dir.parent.parent
+        candidates.append(features_root / backbone / dataset / base_split_id / dataset / backbone / "text")
+    if base_feature_dir.name == base_split_id and base_feature_dir.parent.name == dataset:
+        candidates.append(base_feature_dir / dataset / backbone / "text")
+    unique = []
+    seen = {str((base_feature_dir / "text").resolve())}
     for candidate in candidates:
         key = str(candidate.resolve() if candidate.exists() else candidate)
         if key not in seen:

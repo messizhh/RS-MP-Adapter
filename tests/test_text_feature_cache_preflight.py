@@ -152,6 +152,96 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
             self.assertEqual(report["text_feature_cache_candidates"][0]["selection_rank"], 1)
             self.assertEqual(report["text_feature_cache_candidates"][1]["path"], str(dry_path))
 
+    def test_current_feature_layout_timestamped_text_cache_is_discoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case = write_fake_case(root, text_cache_mode="missing", image_layout="current")
+            timestamped_path = case["text_cache_path"].parent / "20260518T042340" / "text_feature_cache.pt"
+            write_text_cache(
+                timestamped_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed1",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=True,
+                uses_fake_text_features=True,
+                created_at="2026-05-18T04:23:40+00:00",
+            )
+
+            report_path, is_valid = run_text_feature_cache_preflight(
+                manifest_path=case["manifest_path"],
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(case["base_split_path"]),
+                output_dir=root / "outputs" / "preflight" / "text_features",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest text preflight current layout timestamped cache",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["text_feature_cache_ready"])
+            self.assertEqual(
+                report["proposed_text_feature_cache_path"],
+                str(root / "features" / "eurosat" / "remoteclip_vit_b32" / "text" / "text_feature_cache.pt"),
+            )
+            self.assertEqual(report["selected_text_feature_cache_path"], str(timestamped_path))
+            self.assertTrue(report["text_feature_cache_candidates"][0]["dry_run"])
+            self.assertTrue(report["text_feature_cache_candidates"][0]["uses_fake_text_features"])
+            self.assertFalse((root / "results" / "raw").exists())
+
+    def test_current_feature_layout_can_discover_legacy_nested_extractor_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case = write_fake_case(root, text_cache_mode="missing", image_layout="current")
+            legacy_path = (
+                root
+                / "features"
+                / "remoteclip_vit_b32"
+                / "eurosat"
+                / "base_seed1"
+                / "eurosat"
+                / "remoteclip_vit_b32"
+                / "text"
+                / "20260518T042340"
+                / "text_feature_cache.pt"
+            )
+            write_text_cache(
+                legacy_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed1",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=False,
+                uses_fake_text_features=False,
+                created_at="2026-05-18T04:23:40+00:00",
+            )
+
+            report_path, is_valid = run_text_feature_cache_preflight(
+                manifest_path=case["manifest_path"],
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(case["base_split_path"]),
+                output_dir=root / "outputs" / "preflight" / "text_features",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest text preflight legacy nested extractor cache",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["text_feature_cache_ready"])
+            self.assertEqual(report["selected_text_feature_cache_path"], str(legacy_path))
+            self.assertEqual(len(report["text_feature_cache_candidates"]), 1)
+            self.assertFalse(report["text_feature_cache_candidates"][0]["dry_run"])
+            self.assertFalse(report["text_feature_cache_candidates"][0]["uses_fake_text_features"])
+            self.assertFalse((root / "results" / "raw").exists())
+
     def test_results_raw_output_dir_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -170,7 +260,7 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
                 )
 
 
-def write_fake_case(root: Path, *, text_cache_mode: str) -> dict[str, Path]:
+def write_fake_case(root: Path, *, text_cache_mode: str, image_layout: str = "legacy") -> dict[str, Path]:
     dataset = "eurosat"
     backbone = "remoteclip_vit_b32"
     split_id = "base_seed1"
@@ -189,9 +279,13 @@ def write_fake_case(root: Path, *, text_cache_mode: str) -> dict[str, Path]:
                 section=section,
                 image_count=count,
                 feature_dim=feature_dim,
+                image_layout=image_layout,
             )
         )
-    text_cache_path = root / "features" / backbone / dataset / split_id / "text" / "text_feature_cache.pt"
+    if image_layout == "current":
+        text_cache_path = root / "features" / dataset / backbone / "text" / "text_feature_cache.pt"
+    else:
+        text_cache_path = root / "features" / backbone / dataset / split_id / "text" / "text_feature_cache.pt"
     if text_cache_mode != "missing":
         rows = num_classes - 1 if text_cache_mode == "bad_shape" else num_classes
         write_text_cache(
@@ -247,8 +341,12 @@ def write_image_summary(
     section: str,
     image_count: int,
     feature_dim: int,
+    image_layout: str = "legacy",
 ) -> dict[str, str]:
-    run_dir = root / "features" / backbone / dataset / split_id / section / "run"
+    if image_layout == "current":
+        run_dir = root / "features" / dataset / backbone / section / "run"
+    else:
+        run_dir = root / "features" / backbone / dataset / split_id / section / "run"
     summary_path = run_dir / "feature_extraction_summary.json"
     safe_write_json(
         summary_path,

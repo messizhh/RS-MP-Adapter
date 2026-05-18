@@ -108,7 +108,7 @@ def run_text_feature_extraction(
             True,
         )
     )
-    run_dir = unique_dir(output_root / backbone / dataset / base_split_id / dataset / backbone / "text")
+    run_dir = unique_dir(text_cache_output_base(output_root, dataset=dataset, backbone=backbone))
     summary_path = run_dir / "text_feature_extraction_summary.json"
     cache_path = run_dir / "text_feature_cache.pt"
 
@@ -481,6 +481,10 @@ def save_text_cache(cache: dict[str, Any], path: Path) -> Path:
     with path.open("wb") as handle:
         pickle.dump(cache, handle)
     return path
+
+
+def text_cache_output_base(output_root: Path, *, dataset: str, backbone: str) -> Path:
+    return output_root / dataset / backbone / "text"
 
 
 def int_or_none(value: Any) -> int | None:
