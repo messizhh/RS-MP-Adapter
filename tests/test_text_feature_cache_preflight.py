@@ -95,7 +95,9 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
             self.assertTrue(report["text_feature_cache_exists"])
             self.assertFalse(report["text_feature_cache_ready"])
             self.assertTrue(any("text_features shape" in error for error in report["errors"]))
-            self.assertEqual(report["text_feature_cache_inspection"]["text_feature_shape"], [2, 512])
+            self.assertIsNone(report["selected_text_feature_cache_path"])
+            self.assertEqual(report["text_feature_cache_candidates"][0]["text_feature_shape"], [2, 512])
+            self.assertFalse(report["text_feature_cache_candidates"][0]["selectable"])
             self.assertFalse((root / "results" / "raw").exists())
 
     def test_multiple_candidates_prefers_latest_real_non_fake_cache(self) -> None:
@@ -242,6 +244,103 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
             self.assertFalse(report["text_feature_cache_candidates"][0]["uses_fake_text_features"])
             self.assertFalse((root / "results" / "raw").exists())
 
+    def test_mismatched_base_split_cache_is_not_selectable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case = write_fake_case(root, text_cache_mode="missing", image_layout="current", split_id="base_seed3")
+            mismatched_path = case["text_cache_path"].parent / "20260518T051438" / "text_feature_cache.pt"
+            write_text_cache(
+                mismatched_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed2",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=False,
+                uses_fake_text_features=False,
+                created_at="2026-05-18T05:14:38+00:00",
+            )
+
+            report_path, is_valid = run_text_feature_cache_preflight(
+                manifest_path=case["manifest_path"],
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(case["base_split_path"]),
+                output_dir=root / "outputs" / "preflight" / "text_features",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest text preflight mismatched base split cache",
+            )
+
+            report = read_json(report_path)
+            self.assertFalse(is_valid)
+            self.assertFalse(report["is_valid"])
+            self.assertTrue(report["text_feature_cache_exists"])
+            self.assertFalse(report["text_feature_cache_ready"])
+            self.assertIsNone(report["selected_text_feature_cache_path"])
+            self.assertEqual(len(report["text_feature_cache_candidates"]), 1)
+            candidate = report["text_feature_cache_candidates"][0]
+            self.assertEqual(candidate["path"], str(mismatched_path))
+            self.assertFalse(candidate["selectable"])
+            self.assertIn("base_split mismatch", candidate["selection_reason"])
+            self.assertTrue(any("base_split mismatch" in error for error in candidate["errors"]))
+            self.assertFalse((root / "results" / "raw").exists())
+
+    def test_matching_base_split_cache_is_selected_over_mismatched_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case = write_fake_case(root, text_cache_mode="missing", image_layout="current", split_id="base_seed3")
+            text_dir = case["text_cache_path"].parent
+            matching_path = text_dir / "20260518T051438" / "text_feature_cache.pt"
+            mismatched_path = text_dir / "20260518T061438" / "text_feature_cache.pt"
+            write_text_cache(
+                matching_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed3",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=False,
+                uses_fake_text_features=False,
+                created_at="2026-05-18T05:14:38+00:00",
+            )
+            write_text_cache(
+                mismatched_path,
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                split_id="base_seed2",
+                num_classes=3,
+                text_rows=3,
+                feature_dim=512,
+                dry_run=False,
+                uses_fake_text_features=False,
+                created_at="2026-05-18T06:14:38+00:00",
+            )
+
+            report_path, is_valid = run_text_feature_cache_preflight(
+                manifest_path=case["manifest_path"],
+                dataset="eurosat",
+                backbone="remoteclip_vit_b32",
+                base_split=str(case["base_split_path"]),
+                output_dir=root / "outputs" / "preflight" / "text_features",
+                execution_env="local_wsl",
+                run_mode="local_validation",
+                command="pytest text preflight matching base split cache",
+            )
+
+            report = read_json(report_path)
+            self.assertTrue(is_valid)
+            self.assertTrue(report["text_feature_cache_exists"])
+            self.assertTrue(report["text_feature_cache_ready"])
+            self.assertEqual(report["selected_text_feature_cache_path"], str(matching_path))
+            candidates = {row["path"]: row for row in report["text_feature_cache_candidates"]}
+            self.assertTrue(candidates[str(matching_path)]["selectable"])
+            self.assertFalse(candidates[str(mismatched_path)]["selectable"])
+            self.assertIn("base_split mismatch", candidates[str(mismatched_path)]["selection_reason"])
+            self.assertFalse((root / "results" / "raw").exists())
+
     def test_results_raw_output_dir_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -260,12 +359,19 @@ class TextFeatureCachePreflightTest(unittest.TestCase):
                 )
 
 
-def write_fake_case(root: Path, *, text_cache_mode: str, image_layout: str = "legacy") -> dict[str, Path]:
+def write_fake_case(
+    root: Path,
+    *,
+    text_cache_mode: str,
+    image_layout: str = "legacy",
+    split_id: str = "base_seed1",
+    text_cache_split_id: str | None = None,
+) -> dict[str, Path]:
     dataset = "eurosat"
     backbone = "remoteclip_vit_b32"
-    split_id = "base_seed1"
     num_classes = 3
     feature_dim = 512
+    cache_split_id = text_cache_split_id or split_id
     base_split_path = write_base_split(root, dataset=dataset, split_id=split_id, num_classes=num_classes)
     entries = []
     for section, count in [("train", 12), ("val", 6), ("test", 6)]:
@@ -292,7 +398,7 @@ def write_fake_case(root: Path, *, text_cache_mode: str, image_layout: str = "le
             text_cache_path,
             dataset=dataset,
             backbone=backbone,
-            split_id=split_id,
+            split_id=cache_split_id,
             num_classes=num_classes,
             text_rows=rows,
             feature_dim=feature_dim,

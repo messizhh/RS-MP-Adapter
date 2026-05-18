@@ -123,8 +123,11 @@ def run_text_feature_cache_preflight(
         execution_env=execution_env,
         run_mode=run_mode,
     )
+    if candidate_summaries and not any(summary.get("selectable") for summary in candidate_summaries):
+        errors.append("no selectable text feature cache candidate matched the requested schema and base_split")
+        errors.extend(candidate_error for summary in candidate_summaries for candidate_error in summary.get("errors", []))
     text_cache_path = choose_text_cache_candidate(candidate_summaries, warnings)
-    text_cache_exists = text_cache_path is not None and text_cache_path.exists()
+    text_cache_exists = bool(text_cache_candidates) or (text_cache_path is not None and text_cache_path.exists())
     text_cache_inspection: dict[str, Any] = {
         "path": str(text_cache_path) if text_cache_path is not None else None,
         "exists": text_cache_exists,
@@ -498,7 +501,9 @@ def choose_text_cache_candidate(candidate_summaries: list[dict[str, Any]], warni
             f"found {len(candidate_summaries)} text feature cache candidates; selecting highest-ranked cache by "
             "real/non-fake status, schema validity, and newest timestamp"
         )
-    selected = candidate_summaries[0]
+    selected = next((summary for summary in candidate_summaries if summary.get("selectable")), None)
+    if selected is None:
+        return None
     if selected.get("dry_run") or selected.get("uses_fake_text_features"):
         warnings.append(
             "selected text feature cache uses fake/dry-run text features; it is acceptable for preflight shape checks "
@@ -604,8 +609,8 @@ def inspect_text_feature_cache(
         errors.append(f"{path}: backbone mismatch, expected {backbone}, found {data.get('backbone')}")
     if not data.get("base_split"):
         errors.append(f"{path}: base_split must be recorded")
-    elif str(data.get("base_split", "")) not in {base_split_id, str(Path(base_split_id).stem)}:
-        warnings.append(f"{path}: base_split is not recorded as {base_split_id}")
+    elif not base_split_matches_request(data.get("base_split"), base_split_id):
+        errors.append(f"{path}: base_split mismatch, expected {base_split_id}, found {data.get('base_split')}")
     if feature_dim is not None and expected_feature_dim is not None and feature_dim != expected_feature_dim:
         errors.append(f"{path}: feature_dim={feature_dim} does not match expected_feature_dim={expected_feature_dim}")
     if num_classes is not None and class_names and num_classes != len(class_names):
@@ -645,6 +650,15 @@ def inspect_text_feature_cache(
     if data.get("is_paper_result") is not False:
         errors.append(f"{path}: is_paper_result must be false for text feature cache preflight readiness")
     return inspection
+
+
+def base_split_matches_request(recorded_base_split: Any, requested_base_split_id: str) -> bool:
+    if not isinstance(recorded_base_split, str) or not recorded_base_split:
+        return False
+    requested_tokens = {requested_base_split_id, Path(requested_base_split_id).stem}
+    recorded_path = Path(recorded_base_split)
+    recorded_tokens = {recorded_base_split, recorded_path.name, recorded_path.stem}
+    return bool(requested_tokens & recorded_tokens)
 
 
 def proposed_text_feature_cache_schema(
