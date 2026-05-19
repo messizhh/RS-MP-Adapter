@@ -1,0 +1,67 @@
+{
+  "allow_fake_results": false,
+  "backbone": "remoteclip_vit_b32",
+  "command": "scripts/export_verified_tables_from_preflight.py --preflight-summary outputs/preflight/post_run_result/eurosat_remoteclip_vit_b32/full_matrix_20260518T022057Z/post_run_preflight_summary.tsv --output-root results/tables --dataset eurosat --backbone remoteclip_vit_b32",
+  "confusion_matrix_status": "available",
+  "created_at": "2026-05-18T03:01:47.442095+00:00",
+  "dataset": "eurosat",
+  "does_not_modify_results_raw": true,
+  "does_not_run_experiments": true,
+  "does_not_scan_raw_root": true,
+  "exclusion_reason_counts": {},
+  "explicitly_excluded_run_modes": [
+    "debug",
+    "dry_run",
+    "local_validation",
+    "smoke_test",
+    "tiny_subset"
+  ],
+  "git_commit": "df2dce49bf42e9a5d0a3a62962efe2f1c292f2d6",
+  "included_execution_envs": [
+    "remote_server"
+  ],
+  "included_methods": [
+    "proto_adapter",
+    "rs_cpc",
+    "tip_adapter",
+    "zero_shot"
+  ],
+  "included_run_modes": [
+    "server_full"
+  ],
+  "num_excluded": 0,
+  "num_included": 132,
+  "num_preflight_rows": 132,
+  "output_dir": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z",
+  "outputs": {
+    "cache_tradeoff_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/cache_tradeoff_seed_rows.csv",
+    "cache_tradeoff_summary_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/cache_tradeoff_summary.csv",
+    "confusion_matrix_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/confusion_matrix_seed_rows.csv",
+    "efficiency_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/efficiency_seed_rows.csv",
+    "efficiency_summary_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/efficiency_summary.csv",
+    "inclusion_registry_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/inclusion_registry.csv",
+    "inclusion_registry_json": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/inclusion_registry.json",
+    "main_accuracy_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/main_accuracy_seed_rows.csv",
+    "main_accuracy_summary_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/main_accuracy_summary.csv",
+    "per_class_accuracy_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/per_class_accuracy_seed_rows.csv",
+    "rs_cpc_ablation_seed_rows_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/rs_cpc_m_prototype_init_ablation_seed_rows.csv",
+    "rs_cpc_ablation_summary_csv": "results/tables/day2_eurosat_remoteclip_vit_b32_20260518T030147Z/rs_cpc_m_prototype_init_ablation_summary.csv"
+  },
+  "paper_facing_status": "not_marked_as_final_paper_tables",
+  "per_class_accuracy_status": "available",
+  "policy_note": "Verified analysis table generated from full-matrix whitelist and post-run preflight, pending final paper-facing inclusion policy.",
+  "raw_paper_flag_counts": {
+    "metadata_eligible_for_paper_tables_false": 132,
+    "metadata_eligible_for_paper_tables_true": 0,
+    "metadata_is_paper_result_false": 132,
+    "metadata_is_paper_result_true": 0,
+    "metrics_eligible_for_paper_tables_false": 132,
+    "metrics_eligible_for_paper_tables_true": 0,
+    "metrics_is_paper_result_false": 132,
+    "metrics_is_paper_result_true": 0
+  },
+  "required_execution_env": "remote_server",
+  "required_run_mode": "server_full",
+  "source_preflight_summary": "outputs/preflight/post_run_result/eurosat_remoteclip_vit_b32/full_matrix_20260518T022057Z/post_run_preflight_summary.tsv",
+  "source_script": "scripts/export_verified_tables_from_preflight.py"
+}

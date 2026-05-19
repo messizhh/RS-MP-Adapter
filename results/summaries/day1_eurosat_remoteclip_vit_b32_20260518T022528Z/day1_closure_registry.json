@@ -1,0 +1,44 @@
+{
+  "task": "Day 1: EuroSAT + RemoteCLIP ViT-B/32 server_full result closure",
+  "dataset": "eurosat",
+  "backbone": "remoteclip_vit_b32",
+  "execution_env": "remote_server",
+  "run_mode": "server_full",
+  "status_tsv": "outputs/day1_full_matrix/eurosat_remoteclip_vit_b32_fixed_20260518T014818Z/full_matrix_status.tsv",
+  "post_run_preflight_summary_json": "outputs/preflight/post_run_result/eurosat_remoteclip_vit_b32/full_matrix_20260518T022057Z/post_run_preflight_summary.json",
+  "num_commands": 132,
+  "command_exit_counter": {
+    "0": 132
+  },
+  "num_failed_commands": 0,
+  "method_counter": {
+    "zero_shot": 3,
+    "tip_adapter": 15,
+    "proto_adapter": 15,
+    "rs_cpc": 99
+  },
+  "seed_counter": {
+    "1": 44,
+    "2": 44,
+    "3": 44
+  },
+  "shot_counter": {
+    "None": 3,
+    "1": 15,
+    "2": 21,
+    "4": 27,
+    "8": 33,
+    "16": 33
+  },
+  "num_post_run_preflight_rows": 132,
+  "post_run_preflight_exit_counter": {
+    "0": 132
+  },
+  "post_run_valid_counter": {
+    "True": 132
+  },
+  "num_failed_preflights": 0,
+  "failed_commands": [],
+  "failed_preflights": [],
+  "ready_for_day2_table_export": true
+}

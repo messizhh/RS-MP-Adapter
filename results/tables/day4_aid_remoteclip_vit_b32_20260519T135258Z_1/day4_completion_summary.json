@@ -1,0 +1,57 @@
+{
+  "created_at": "2026-05-19T13:55:03.839041+00:00",
+  "dataset": "aid",
+  "backbone": "remoteclip_vit_b32",
+  "table_dir": "results/tables/day4_aid_remoteclip_vit_b32_20260519T135258Z_1",
+  "full_matrix_audit": "outputs/day4_full_matrix/aid_remoteclip_vit_b32_20260519T134748Z/full_matrix_audit_summary.json",
+  "whitelist_audit": "outputs/preflight/post_run_result/aid_remoteclip_vit_b32/day4_full_matrix_whitelist_20260519T135258Z/post_run_preflight_summary_build_audit.json",
+  "table_audit_summary": "results/tables/day4_aid_remoteclip_vit_b32_20260519T135258Z_1/day2_table_audit_summary.json",
+  "sha256_manifest": "results/tables/day4_aid_remoteclip_vit_b32_20260519T135258Z_1/day4_table_package_sha256_excluding_manifest.txt",
+  "expected_num_runs": 132,
+  "found_num_runs_with_metadata_and_metrics": 132,
+  "missing_num_runs": 0,
+  "is_full_matrix_raw_complete": true,
+  "num_whitelist_rows": 132,
+  "is_whitelist_complete": true,
+  "num_included": 132,
+  "num_excluded": 0,
+  "included_methods": [
+    "proto_adapter",
+    "rs_cpc",
+    "tip_adapter",
+    "zero_shot"
+  ],
+  "included_execution_envs": [
+    "remote_server"
+  ],
+  "included_run_modes": [
+    "server_full"
+  ],
+  "paper_facing_status": "not_marked_as_final_paper_tables",
+  "raw_paper_flag_counts": {
+    "metadata_eligible_for_paper_tables_false": 132,
+    "metadata_eligible_for_paper_tables_true": 0,
+    "metadata_is_paper_result_false": 132,
+    "metadata_is_paper_result_true": 0,
+    "metrics_eligible_for_paper_tables_false": 132,
+    "metrics_eligible_for_paper_tables_true": 0,
+    "metrics_is_paper_result_false": 132,
+    "metrics_is_paper_result_true": 0
+  },
+  "does_not_modify_results_raw": true,
+  "does_not_run_experiments": true,
+  "csv_row_counts": {
+    "cache_tradeoff_seed_rows.csv": 129,
+    "cache_tradeoff_summary.csv": 43,
+    "confusion_matrix_seed_rows.csv": 237600,
+    "efficiency_seed_rows.csv": 132,
+    "efficiency_summary.csv": 44,
+    "inclusion_registry.csv": 132,
+    "main_accuracy_seed_rows.csv": 132,
+    "main_accuracy_summary.csv": 44,
+    "per_class_accuracy_seed_rows.csv": 7920,
+    "rs_cpc_m_prototype_init_ablation_seed_rows.csv": 99,
+    "rs_cpc_m_prototype_init_ablation_summary.csv": 33
+  },
+  "status": "day4_aid_remoteclip_server_full_candidate_verified_analysis_tables_complete"
+}
